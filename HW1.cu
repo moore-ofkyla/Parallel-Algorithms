@@ -7,18 +7,18 @@
 */
 
 // Include files
-#include <sys/time.h>
-#include <stdio.h>
+#include <sys/time.h> //includes functions for working with time. Specifically useful for elapsed time. 
+#include <stdio.h> //includes standard input and output functions, allows printing to console. 
 
 // Defines
-#define N 100// Length of the vector
+#define N 10000// Length of the vector( each vector will have N elements)
 
 // Global variables
-float *A_CPU, *B_CPU, *C_CPU; 
+float *A_CPU, *B_CPU, *C_CPU;  //creats three variables (pointers)
 float Tolerance = 0.00000001;
 
 // Function prototypes
-void allocateMemory();
+void allocateMemory(); //function prototypes, contains the function name, the return type, and the number and type of parameters. 
 void innitialize();
 void addVectorsCPU(float*, float*, float*, int);
 int  check(float*, int);
@@ -26,6 +26,7 @@ long elaspedTime(struct timeval, struct timeval);
 void cleanUp();
 
 //Allocating the memory we will be using.
+//function to allocate memory. 
 void allocateMemory()
 {	
 	// Host "CPU" memory.				
@@ -102,13 +103,13 @@ int main()
 	timeval start, end;
 	
 	// Allocating the memory you will need.
-	allocateMemory();
+	allocateMemory(); //function call
 	
 	// Putting values in the vectors.
 	innitialize();
 
 	// Starting the timer.	
-	gettimeofday(&start, NULL);
+	gettimeofday(&start, NULL); //function call,passes parameters. 
 
 	// Add the two vectors.
 	addVectorsCPU(A_CPU, B_CPU ,C_CPU, N);
@@ -131,7 +132,7 @@ int main()
 	CleanUp();	
 	
 	// Making sure it flushes out anything in the print buffer.
-	printf("\n");
+	printf("\n"); 
 	
 	return(0);
 }
