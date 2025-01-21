@@ -81,8 +81,11 @@ long elaspedTime(struct timeval start, struct timeval end)
 {
 	// tv_sec = number of seconds past the Unix epoch 01/01/1970
 	// tv_usec = number of microseconds past the current second.
+
+//struct is used because timeval holds two values tv_sec and tv_usec. Used to store time values with microsecond percision. 
 	
-	long startTime = start.tv_sec * 1000000 + start.tv_usec; // In microseconds.
+	long startTime = start.tv_sec * 1000000 + start.tv_usec; // In microseconds. 
+//long is used over float because we don't need to introduce potential floating point errors
 	long endTime = end.tv_sec * 1000000 + end.tv_usec; // In microseconds
 
 	// Returning the total time elasped in microseconds
@@ -132,6 +135,7 @@ int main()
 	CleanUp();	
 	
 	// Making sure it flushes out anything in the print buffer.
+//Makes sure everything is printed right
 	printf("\n"); 
 	
 	return(0);
