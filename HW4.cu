@@ -65,6 +65,8 @@ void setUpDevices()
 	BlockSize.z = 1;
 	
 	GridSize.x = 64; // This gives us the correct number of blocks.
+	//300 blocks, sped up the gpu by 61 microseconds. 
+	//400 blocks, sped up the gpu by 96 microseconds. 
 	GridSize.y = 1;
 	GridSize.z = 1;
 }
@@ -113,6 +115,7 @@ __global__ void addVectorsGPU(float *a, float *b, float *c, int n)
 	if(id<n)
 	{
 		#pragma unroll
+		//for n=1150300, pragma unroll sped the gpu up by 24 microseconds. 
 		for(int i = id; i < n; i+= blockDim.x* gridDim.x)// Making sure we are not working on memory we do not own.
 			{
 				c[i] = sqrt(cos(a[i])*cos(a[i]) + sin(a[i])*sin(a[i]) - 1.0 + a[i]*a[i]) + sqrt(cos(b[i])*cos(b[i]) + sin(b[i])*sin(b[i]) - 1.0 + b[i]*b[i]);
