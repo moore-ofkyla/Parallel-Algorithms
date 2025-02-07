@@ -1,5 +1,5 @@
 
-// Name:
+// Name:Kyla
 // nvcc HW6a.cu -o temp -lglut -lGL
 // glut and GL are openGL libraries.
 /*
