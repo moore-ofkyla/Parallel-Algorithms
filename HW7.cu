@@ -64,8 +64,8 @@ __global__ void colorPixels(float *pixels, float xMin, float yMin, float dx, flo
 	id = 3*(blockIdx.x*WindowWidth+i);
 	
 	//Asigning each thread its x and y value of its pixel.
-	x = xMin + dx*i; //Start at bottom
-	y = yMin + dy*blockIdx.x;
+	x = xMin + dx*i; //Start at bottom, then move by the stepsizeX times i, along the width of the screen
+	y = yMin + dy*blockIdx.x;//same as before. Start at bottom, move up by stepsizey times the blockIdx.x(row)
 	
 	count = 0;
 	mag = sqrt(x*x + y*y);;
@@ -96,6 +96,7 @@ __global__ void colorPixels(float *pixels, float xMin, float yMin, float dx, flo
 	/*I wanted to create a gradient along the row, so I thought I could use the blockIdx.x since that corresponds to the rows
 	-At first I just did a ratio of blockIdx.X/WindowHeight to get a ratio of the current row to the total height.
 	However, this was pretty subtle, so I asked chat to help me out and so I added a power function to make the gradient more pronouced
+	Then I just messed around with the values until I thought it looked pretty!
 	*/
 
 		pixels[id]     = 0.5*1/shade;
