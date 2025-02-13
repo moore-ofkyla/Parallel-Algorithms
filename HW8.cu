@@ -107,7 +107,7 @@ void dotProductCPU(float *a, float *b, float *C_CPU, int n)
 // It adds vectors a and b on the GPU then stores result in vector c.
 __global__ void dotProductGPU(float *a, float *b, float *C_GPU, int n)
 {
-	int id = threadIdx.x;//+blockIdx.x*blockDim.x 
+	int id = threadIdx.x;//+blockIdx.x*blockDim.x, only using one block in this code
 
 	if(id<n)//makes sure we are in our yard
 	{ 
@@ -123,29 +123,29 @@ __global__ void dotProductGPU(float *a, float *b, float *C_GPU, int n)
 			while(size>1)//while we have more than one thing to add. once its one we are done. hey that rhymed 
 			{
 
-				if(size%2==0)
+				if(size%2==0)//checking if the number of things were adding is even,if yes it's easy. 
 				{
-					if(id<size/2)
+					if(id<size/2)// if the id is smaller than size/2, it's gonna be put to work
 						{
-							C_GPU[id]=C_GPU[id]+C_GPU[id+size/2];
+							C_GPU[id]=C_GPU[id]+C_GPU[id+size/2];// adds current id to id+size/2. like adding 0 and 500, in a size of 1000
 						}
 
 				}
-				else{
-					if(id==0)
+				else{// if not even...
+					if(id==0)//if its id is 0, then we want to add the last value to the first, to make it even
 						{
 						C_GPU[id] = C_GPU[id]+C_GPU[id+size-1];
 						}
-				size=size-1;
+				size=size-1;// take away one from size, since we added it to id 0
 
-					if(id<size/2)
+					if(id<size/2)// now just do the same thing we did for even
 						{
 						C_GPU[id]=C_GPU[id]+C_GPU[id+size/2];
 						}
 			}
 
-			size=size/2;
-			__syncthreads();
+			size=size/2;// cut in half
+			__syncthreads();// make sure everyone is on the same page
 			}
 		
 		}
