@@ -15,7 +15,8 @@
 #include <stdio.h>
 
 // Defines
-#define N 25 // Length of the vector
+#define N 200000 // Length of the vector
+#define THREADSPERBLOCK 200// number of threads per block. we need this for shared memory on GPU
 
 // Global variables
 float *A_CPU, *B_CPU, *C_CPU; //CPU pointers
@@ -53,11 +54,11 @@ void cudaErrorCheck(const char *file, int line)
 // This will be the layout of the parallel space we will be using.
 void setUpDevices()
 {
-	BlockSize.x = 256;
+	BlockSize.x = THREADSPERBLOCK;//go up to #define to change
 	BlockSize.y = 1;
 	BlockSize.z = 1;
 	
-	GridSize.x = (int)(((N-1)/BlockSize.x)+1);//creates grid size we need, based on n and blocksize
+	GridSize.x = (int)(((N-1)/BlockSize.x)+1);
 	GridSize.y = 1;
 	GridSize.z = 1;
 }
@@ -75,7 +76,7 @@ void allocateMemory()
 	cudaErrorCheck(__FILE__, __LINE__);
 	cudaMalloc(&B_GPU,N*sizeof(float));
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&C_GPU,N*sizeof(float));
+	cudaMalloc(&C_GPU,GridSize.x*sizeof(float));//we only need this be as big as how many blocks we have
 	cudaErrorCheck(__FILE__, __LINE__);
 }
 
@@ -107,28 +108,41 @@ void dotProductCPU(float *a, float *b, float *C_CPU, int n)
 // It adds vectors a and b on the GPU then stores result in vector c.
 __global__ void dotProductGPU(float *a, float *b, float *c, int n)
 {
-	int id = threadIdx.x;
+	__shared__ float sharedC[THREADSPERBLOCK];//creates shared memory between threads(based on number of threads per block)
+	//yay shared memory=faster access than global memory
+
+	int tid=threadIdx.x+ blockIdx.x*blockDim.x;//global index
+	int cache = threadIdx.x;//what thread we are on in the block
+
+	sharedC[cache]=0.0;//so we know all values of sharedC will be 0, if they are out of our bounds/n
+	if (tid<n)//updates sharedC to values of a*b if tid is less than n
+	{
+	 	sharedC[cache] = a[tid] * b[tid];
+	}
 	
-	c[id] = a[id] * b[id];
-	__syncthreads();
+	__syncthreads();//make sure we're on the same page
 		
 	int fold = blockDim.x;
-	while(1 < fold)
+	while(1 < fold)//do the folding on the shared memory 
 	{
 		if(fold%2 != 0)
 		{
-			if(id == 0 && (fold - 1) < n)
+			if(cache== 0 && (fold - 1) < n)
 			{
-				c[0] = c[0] + c[fold - 1];
+				sharedC[0] = sharedC[0] + sharedC[fold - 1];
 			}
 			fold = fold - 1;
 		}
 		fold = fold/2;
-		if(id < fold && (id + fold) < n)
+		if(cache < fold && (cache + fold) < n)
 		{
-			c[id] = c[id] + c[id + fold];
+			sharedC[cache] = sharedC[cache] + sharedC[cache + fold];
 		}
-		__syncthreads();
+		__syncthreads();//make sure we're all done
+	}
+	if(cache==0)//if we are the first thread we should have all the info stored on us
+	{
+		c[blockIdx.x]=sharedC[0];//store this important info on c, based on what block we are
 	}
 }
 
@@ -201,14 +215,6 @@ int main()
 	gettimeofday(&end, NULL);
 	timeCPU = elaspedTime(start, end);
 	
-	if(BlockSize.x < N)
-	{
-		printf("\n\n Your vector size is larger than the block size.");
-		printf("\n Because we are only using one block this will not work.");
-		printf("\n Good Bye.\n\n");
-		exit(0);
-	}
-	
 	// Adding on the GPU
 	gettimeofday(&start, NULL);
 	
@@ -222,9 +228,15 @@ int main()
 	cudaErrorCheck(__FILE__, __LINE__);
 	
 	// Copy Memory from GPU to CPU	
-	cudaMemcpyAsync(C_CPU, C_GPU, 1*sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpyAsync(C_CPU, C_GPU, GridSize.x*sizeof(float), cudaMemcpyDeviceToHost);
 	cudaErrorCheck(__FILE__, __LINE__);
-	DotGPU = C_CPU[0]; // C_GPU was copied into C_CPU.
+
+	DotGPU = 0.0; 
+
+	for(int i = 0; i < GridSize.x; i++)//sum up all the work our GPU did. We should be adding n sums, where n is the number of blocks we used
+	{
+		DotGPU += C_CPU[i];
+	}
 	
 	// Making sure the GPU and CPU wiat until each other are at the same place.
 	cudaDeviceSynchronize();
@@ -253,5 +265,3 @@ int main()
 	
 	return(0);
 }
-
-
