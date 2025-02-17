@@ -57,7 +57,7 @@ void setUpDevices()
 	BlockSize.y = 1;
 	BlockSize.z = 1;
 	
-	GridSize.x = 1;
+	GridSize.x = (int)(((N-1)/BlockSize.x)+1);//creates grid size we need, based on n and blocksize
 	GridSize.y = 1;
 	GridSize.z = 1;
 }
