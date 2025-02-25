@@ -18,12 +18,16 @@
 	
 	Check both and if either is out of bound report it to your client then kindly
     exit the program.
+	A: I checked grid demention in x. If N=550262250011, or more, then grid size will be too big and itll exit. 
+	I also checked to seee is BLOCK_SIZE is larger than maxthreads for the gpu we are using 
+
 
  3. Always checking to see if you have threads working past your vector is a real pain and adds a bunch of time consumming
     if statments to your GPU code. To get around this findout how much you would have to add to your vector to make it 
     perfectly fit in your block and grid layout and pad it with zeros. Multipying zeros and adding zero do nothing to a 
     dot product. If you were luck on HW8 you kind of did this but you just got lucky because most of the time the GPU sets
-    everything to zero at start up. But!!!, you don't want to put code out where you are just lucky soooo do a cudaMemset
+    everything to zero at start up. But!!!, you don't want to put code out where you are just lucky soooo 
+	do a cudaMemset
     so you know everything is zero. Then copy up the now zero values.
 
  4. In HW9 we had to do the final add "reduction' on the CPU because we can't sync block. Use atomic add to get around 
@@ -31,6 +35,10 @@
     But!!! We are working with floats and atomics with floats can only be done on GPUs with major compute capability 3 
     or higher. Use device properties to check if this is true. And, while you are at it check to see if you have more
     than 1 GPU and if you do select the best GPU based on compute capablity.
+	A: checked for best compute power and set it as the GPU to use
+
+
+
  5. Add any additional bells and whistles to the code that you thing would make the code better and more foolproof.
 */
 
@@ -39,7 +47,7 @@
 #include <stdio.h>
 
 // Defines
-#define N 100000 // Length of the vector
+#define N 230001 // Length of the vector
 #define BLOCK_SIZE 256 // Threads in a block
 
 // Global variables
@@ -49,6 +57,7 @@ float DotCPU, DotGPU;
 dim3 BlockSize; //This variable will hold the Dimensions of your blocks
 dim3 GridSize; //This variable will hold the Dimensions of your grid
 float Tolerance = 0.01;
+int PaddedN;//N size of vector plus padding of zeros size
 
 // Function prototypes
 void cudaErrorCheck(const char *, int);
@@ -60,9 +69,9 @@ __global__ void dotProductGPU(float*, float*, float*, int);
 bool  check(float, float, float);
 long elaspedTime(struct timeval, struct timeval);
 void cleanUp();
-bool powerOfTwoCheck(int n);
-int  getBestGPU();
-void checkGridSize();
+bool powerOfTwoCheck(int n);//checks for power of 2
+int  getBestGPU();//finds best GPU
+void checkGridandBlockSize();//Checks block and grid size
 
 // This check to see if an error happened in your CUDA code. It tell you what it thinks went wrong,
 // and what file and line it occured on.
@@ -81,21 +90,21 @@ void cudaErrorCheck(const char *file, int line)
 // This will be the layout of the parallel space we will be using.
 void setUpDevices()
 {
+	checkGridandBlockSize();//calls checkGridandBlockSize before we do other things. It'll call getBestGPU to make sure we use the best GPU
+
 	if(powerOfTwoCheck(BLOCK_SIZE))
 	{
-	BlockSize.x = BLOCK_SIZE;
+	BlockSize.x = BLOCK_SIZE;//if block size is a power of 2 were good
 	}
 	else
 	{
 		printf(" You selected a poor thread size. Pick a number that is a power of two please!");
-		exit(0);
+		exit(0);//quits if blocksize is not a power of 2
 	}
+
 	BlockSize.y = 1;
 	BlockSize.z = 1;
 	
-	int ultimateGPU=getBestGPU();
-	cudaSetDevice(ultimateGPU);
-	checkGridSize();
 	GridSize.x = (N - 1)/BlockSize.x + 1; // This gives us the correct number of blocks.
 	GridSize.y = 1;
 	GridSize.z = 1;
@@ -104,18 +113,40 @@ void setUpDevices()
 // Allocating the memory we will be using.
 void allocateMemory()
 {	
+	  // Calculate the total number of threads
+    int totalThreads = BlockSize.x * GridSize.x;
+	int padding=0;
+    // If the total number of threads exceeds the vector size, calculate the padding needed
+	if(totalThreads>N)
+	{
+    padding =  totalThreads-N;
+	}
+
+    // Pad the GPU memory if needed (initialize with zeros)
+    PaddedN = N + padding;  // The padded size  
 	// Host "CPU" memory.				
 	A_CPU = (float*)malloc(N*sizeof(float));
 	B_CPU = (float*)malloc(N*sizeof(float));
 	C_CPU = (float*)malloc(N*sizeof(float));
 	
 	// Device "GPU" Memory
-	cudaMalloc(&A_GPU,N*sizeof(float));
+	cudaMalloc(&A_GPU,PaddedN*sizeof(float));
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&B_GPU,N*sizeof(float));
+	cudaMalloc(&B_GPU,PaddedN*sizeof(float));
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&C_GPU,N*sizeof(float));
+	cudaMalloc(&C_GPU,sizeof(float));
 	cudaErrorCheck(__FILE__, __LINE__);
+     
+	printf("N: %d, BlockSize.x: %d, GridSize.x: %d, totalThreads: %d, padding: %d\n", N, BlockSize.x, GridSize.x, totalThreads, padding);
+
+    cudaMemset(A_GPU, 0, PaddedN * sizeof(float));  
+    cudaErrorCheck(__FILE__, __LINE__);
+    
+    cudaMemset(B_GPU, 0, PaddedN * sizeof(float));  
+    cudaErrorCheck(__FILE__, __LINE__);
+
+    cudaMemset(C_GPU, 0, sizeof(float));  // Initialize result to zero
+    cudaErrorCheck(__FILE__, __LINE__);
 }
 
 // Loading values into the vectors that we will add.
@@ -156,24 +187,20 @@ __global__ void dotProductGPU(float *a, float *b, float *c, int n)
 	int fold = blockDim.x;
 	while(1 < fold)
 	{
-		if(fold%2 != 0)
-		{
-			if(threadIndex == 0 && (vectorIndex + fold - 1) < n)
-			{
-				c_sh[0] = c_sh[0] + c_sh[0 + fold - 1];
-			}
-			fold = fold - 1;
-		}
 		fold = fold/2;
+
 		if(threadIndex < fold && (vectorIndex + fold) < n)
 		{
 			c_sh[threadIndex] = c_sh[threadIndex] + c_sh[threadIndex + fold];
 			
 		}
+
 		__syncthreads();
+ 
 	}
-	
-	c[blockDim.x*blockIdx.x] = c_sh[0];
+	   if (threadIndex == 0) {
+        atomicAdd(c, c_sh[0]);
+	}
 }
 
 // Checking to see if anything went wrong in the vector addition.
@@ -225,7 +252,7 @@ void CleanUp()
 
 bool powerOfTwoCheck(int n)// check if amount of threads is a power of 2
 {
-	    return (n > 0) && (n & (n - 1)) == 0;//checks if n is positive, then does bit stuff
+	    return  (n & (n - 1)) == 0;//checks if n is positive, then does bit stuff
 		/*
 		Bit check for power of 2- A non comp science explanation
 		1) We gotta know power-of-two numbers in binary only have one 1 bit, wiith all other bits being zero
@@ -235,8 +262,6 @@ bool powerOfTwoCheck(int n)// check if amount of threads is a power of 2
 		3) the & represents a bitwise AND, this checks if any bits in the binary representation of n remain 1 in both numbers. 
 		--the cool thing is for powers of two there will NEVER be any 1 bits left after subtraction. 
 			example: n=4(binary 0100), 4-1=3(binary 0011) 0100&0011=0000 which ==0.
-		
-		
 		*/
 }
 
@@ -254,7 +279,6 @@ int  getBestGPU()
     for (int i = 0; i < count; i++) {
         cudaDeviceProp prop;
         cudaGetDeviceProperties(&prop, i);
-	printf(" You have %d GPU(s) in this machine\n", count);
 
         // Print information about each GPU
         printf("Device %d: %s\n", i, prop.name);
@@ -267,29 +291,40 @@ int  getBestGPU()
             bestMinor = prop.minor;
         }
     }
-
+	if(bestMajor< 3)//makes sure our compute capability is more than 3
+	{
+		printf("You don't have a high enough compute power on your GPU for this code...time for an upgrade I suppose ");
+		exit(0);
+	}
     return bestDevice;
 }
 
-void checkGridSize()
+void checkGridandBlockSize()
 {
+	int bestGPU=getBestGPU();
 	cudaDeviceProp prop;
 
-    int count;
-	cudaGetDeviceCount(&count);
-	cudaErrorCheck(__FILE__, __LINE__);
-       
-    // Iterate over each GPU
-    for (int i = 0; i < count; i++) {
-        // Get device properties for each GPU
-        cudaGetDeviceProperties(&prop, i);
+ // Get device properties for each GPU
+        cudaGetDeviceProperties(&prop,bestGPU);
         cudaErrorCheck(__FILE__, __LINE__);
         
+		size_t ourBlockSize= (N - 1)/BlockSize.x + 1; 
         // Print the device name and the maximum grid size in each dimension
-        printf("Device %d: %s\n", i, prop.name);
+        printf("\nBest Device : %s\n", prop.name);
         printf("Max grid dimensions: (%d, %d, %d)\n", prop.maxGridSize[0], prop.maxGridSize[1], prop.maxGridSize[2]);
-    }
+		if(prop.maxGridSize[0]<ourBlockSize)//makes sure grid isnt too big
+		{
+			printf("Your Grid Size is too large (in the x-direction), try again...\n");
+			exit(0);
+		}
+
+		if(BLOCK_SIZE> prop.maxThreadsPerBlock)
+		{
+			printf("Your Block Size is too large, try again...\n");
+			exit(0);
+		}
 }
+
 
 int main()
 {
@@ -317,28 +352,22 @@ int main()
 	gettimeofday(&start, NULL);
 	
 	// Copy Memory from CPU to GPU		
-	cudaMemcpyAsync(A_GPU, A_CPU, N*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(A_GPU, A_CPU, PaddedN*sizeof(float), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMemcpyAsync(B_GPU, B_CPU, N*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(B_GPU, B_CPU, PaddedN*sizeof(float), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
 	
-	dotProductGPU<<<GridSize,BlockSize>>>(A_GPU, B_GPU, C_GPU, N);
+	dotProductGPU<<<GridSize,BlockSize>>>(A_GPU, B_GPU, C_GPU, PaddedN);
 	cudaErrorCheck(__FILE__, __LINE__);
 	
 	// Copy Memory from GPU to CPU	
-	cudaMemcpyAsync(C_CPU, C_GPU, N*sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpyAsync(C_CPU, C_GPU, sizeof(float), cudaMemcpyDeviceToHost);
 	cudaErrorCheck(__FILE__, __LINE__);
 	
 	// Making sure the GPU and CPU wiat until each other are at the same place.
 	cudaDeviceSynchronize();
 	cudaErrorCheck(__FILE__, __LINE__);
-	
-	DotGPU = 0.0;
-	for(int i = 0; i < N; i += BlockSize.x)
-	{
-		DotGPU += C_CPU[i]; // C_GPU was copied into C_CPU. 
-	}
-
+	DotGPU=C_CPU[0];
 	gettimeofday(&end, NULL);
 	timeGPU = elaspedTime(start, end);
 	
