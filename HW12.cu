@@ -93,6 +93,7 @@ void KeyPressed(unsigned char key, int x, int y)
 
 __device__ float hit(float pixelx, float pixely, float *dimingValue, sphereStruct sphere)
 {
+
 	float dx = pixelx - sphere.x;  //Distance from ray to sphere center in x direction
 	float dy = pixely - sphere.y;  //Distance from ray to sphere center in y direction
 	float r2 = sphere.radius*sphere.radius;
@@ -107,6 +108,8 @@ __device__ float hit(float pixelx, float pixely, float *dimingValue, sphereStruc
 
 __global__ void makeSphersBitMap(float *pixels)
 {
+	//updated code to use the global memory 
+
 	float stepSizeX = (XMAX - XMIN)/((float)WINDOWWIDTH - 1);
 	float stepSizeY = (YMAX - YMIN)/((float)WINDOWHEIGHT - 1);
 	
@@ -163,13 +166,13 @@ void makeRandomSpheres()
 
 void makeBitMap()
 {	
-
+//makes a cuda event, yay!
 	cudaEvent_t start,stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
-	cudaEventRecord(start,0);
+	cudaEventRecord(start,0);//starts event before we begin to use GPU
 
-	cudaMemcpyToSymbol(ConstSphere, SpheresCPU, NUMSPHERES*sizeof(sphereStruct));
+	cudaMemcpyToSymbol(ConstSphere, SpheresCPU, NUMSPHERES*sizeof(sphereStruct));//sends info to the const memory on the GPU
 	cudaErrorCheck(__FILE__, __LINE__);
 	
 
@@ -179,14 +182,14 @@ void makeBitMap()
 	cudaMemcpyAsync(PixelsCPU, PixelsGPU, WINDOWWIDTH*WINDOWHEIGHT*3*sizeof(float), cudaMemcpyDeviceToHost);
 	cudaErrorCheck(__FILE__, __LINE__);
 
-	cudaEventRecord(stop,0);
+	cudaEventRecord(stop,0);//stops event after we are done with GPU
 	cudaEventSynchronize(stop);
 	float elapsedTime;
 	cudaEventElapsedTime(&elapsedTime,start,stop);
-	printf("Time to generate: %3.1f micro seconds\n",elapsedTime*1000);
+
+	printf("Time to generate: %3.1f micro seconds\n",elapsedTime*1000);//prints time in microseconds
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);
-
 
 	paintScreen();
 }
