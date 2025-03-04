@@ -62,7 +62,7 @@ void SetUpCudaDevices()
 	cudaErrorCheck(__FILE__, __LINE__);
 	printf("Multiprocessor count : %d\n", prop.multiProcessorCount);	
 
-	BlockSize.x = prop.multiProcessorCount*2;
+	BlockSize.x = prop.multiProcessorCount*2;//sets blocksize.x to 2 times the number of multiprocessors 
 	if(prop.maxThreadsDim[0] < BlockSize.x)
 	{
 		printf("\n You are trying to create more threads (%d) than your GPU can support on a block (%d).\n Good Bye\n", BlockSize.x, prop.maxThreadsDim[0]);
@@ -159,9 +159,9 @@ void fillHistogramCPU()
 //This is the kernel. It is the function that will run on the GPU.
 __global__ void fillHistogramGPU(float *randomNumbers, int *hist)
 {
-    __shared__ unsigned int temp[NUMBER_OF_BINS];
+    __shared__ unsigned int temp[NUMBER_OF_BINS];//creates our shared memory 
 
-    if (threadIdx.x < NUMBER_OF_BINS)
+    if (threadIdx.x < NUMBER_OF_BINS)// intializes temp to 0
 	{
         temp[threadIdx.x] = 0;
 	}
