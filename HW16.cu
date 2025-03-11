@@ -204,7 +204,7 @@ int main()
 
 		trigAdditionGPU<<< DATA_CHUNKS/BLOCK_SIZE,BLOCK_SIZE,0,Stream0>>>(A0_GPU,B0_GPU,C0_GPU,DATA_CHUNKS);
 		cudaErrorCheck(__FILE__, __LINE__);
-		trigAdditionGPU<<< DATA_CHUNKS/BLOCK_SIZE,BLOCK_SIZE,0,Stream1>>>(A0_GPU,B0_GPU,C0_GPU,DATA_CHUNKS);
+		trigAdditionGPU<<< DATA_CHUNKS/BLOCK_SIZE,BLOCK_SIZE,0,Stream1>>>(A1_GPU,B1_GPU,C1_GPU,DATA_CHUNKS);
 		cudaErrorCheck(__FILE__, __LINE__);
 
 		cudaMemcpyAsync(C_CPU+i, C0_GPU, DATA_CHUNKS*sizeof(float),cudaMemcpyDeviceToHost,Stream0);
