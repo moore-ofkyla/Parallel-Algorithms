@@ -27,7 +27,7 @@
 #define GRAVITY 0.1 
 #define MASS 10.0  	
 #define DIAMETER 1.0
-#define SPHERE_PUSH_BACK_STRENGTH 0.5
+#define SPHERE_PUSH_BACK_STRENGTH 0.9
 #define PUSH_BACK_REDUCTION 0.1
 #define DAMP 0.01
 #define DRAW 100
@@ -64,12 +64,14 @@ void set_initail_conditions()
 	time_t t;
 	srand((unsigned) time(&t));
 	int yeahBuddy;
+	int count;
 	float dx, dy, dz, seperation;
 	
 	for(int i=0; i<NUMBER_OF_SPHERES;i++)
 	{
 	
 		yeahBuddy = 0;
+		count=0;
 		do{
 		px[i] = (LENGTH_OF_BOX - DIAMETER)*rand()/RAND_MAX - (LENGTH_OF_BOX - DIAMETER)/2.0;
 		py[i] = (LENGTH_OF_BOX - DIAMETER)*rand()/RAND_MAX - (LENGTH_OF_BOX - DIAMETER)/2.0;
@@ -85,14 +87,20 @@ void set_initail_conditions()
 			dz = pz[j] - pz[i];
 			seperation = sqrt(dx*dx + dy*dy + dz*dz);
 
-			if(seperation < DIAMETER)
+			if(seperation < DIAMETER )
 				{
 				yeahBuddy = 1;
+				count++;
 				break;
-				}	
-		
-		}
-	}while(yeahBuddy==1);
+				}
+			}	
+			if(count>10000)
+				{
+					printf("Error generating balls in box. Please try again.");
+					exit(0);
+				}
+
+			}while(yeahBuddy==1);
 	
 	vx[i] = 2.0*MAX_VELOCITY*rand()/RAND_MAX - MAX_VELOCITY;
 	vy[i]=  2.0*MAX_VELOCITY*rand()/RAND_MAX - MAX_VELOCITY;
@@ -362,5 +370,4 @@ int main(int argc, char** argv)
 	glutMainLoop();
 	return 0;
 }
-
 
