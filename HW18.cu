@@ -6,6 +6,7 @@
  What to do:
  This is some lean nBody code that runs on the CPU. Rewrite it, keeping the same general format, 
  but offload the compute-intensive parts of the code to the GPU for acceleration.
+ -force and position 
  Note: The code takes two arguments as inputs:
  1. The number of bodies to simulate, (We will keep the number of bodies under 1024 for this HW so it can be run on one block.)
  2. Whether to draw sub-arrangements of the bodies during the simulation (1), or only the first and last arrangements (0).
@@ -36,7 +37,7 @@
 //Globals
 int N, DrawFlag;
 float3 *P, *V, *F;
-float3 *PGPU, *VGPU, *FGPU;
+float3 *PGPU, *VGPU, *FGPU; 
 float *M;
 float *MGPU;
 float GlobeRadius, Diameter, Radius;
@@ -45,17 +46,17 @@ dim3 BlockSize;
 dim3 GridSize;
 
 // Function prototypes
-void cudaErrorCheck(const char *, int);
+void cudaErrorCheck(const char *, int);//added CUDA error check 
 void setUpDevices();
 void keyPressed(unsigned char, int, int);
 long elaspedTime(struct timeval, struct timeval);
 void drawPicture();
 void timer();
 void setup();
-void setUpDevice();
+void setUpDevice();//sets up device 
 void nBody();
-__global__ void calculateForces(int N,float *M,float3 *P, float3 *F);
-__global__ void calculatePositions(int N,float *M,float3 *P, float3 *F,float *V,float time, float dt,float damp);
+__global__ void calculateForces(int N,float *M,float3 *P, float3 *F);//kernal 1 for forces
+__global__ void calculatePositions(int N,float *M,float3 *P, float3 *F,float *V,float time, float dt,float damp);//kernal 2 for positions
 void cleanup();
 int main(int, char**);
 
@@ -148,11 +149,13 @@ void setup()
 
 	Damp = 0.5;
 
+	//allocate memory CPU
 	M = (float*)malloc(N*sizeof(float));
 	P = (float3*)malloc(N*sizeof(float3));
 	V = (float3*)malloc(N*sizeof(float3));
 	F = (float3*)malloc(N*sizeof(float3));
 
+	//allocate memory GPU
 	cudaMalloc(&MGPU,N*sizeof(float));
 	cudaErrorCheck(__FILE__, __LINE__);
 	cudaMalloc(&PGPU,N*sizeof(float3));
@@ -164,7 +167,7 @@ void setup()
 
 
 
-		Diameter = pow(H/G, 1.0/(LJQ - LJP)); // This is the value where the force is zero for the L-J type force.
+	Diameter = pow(H/G, 1.0/(LJQ - LJP)); // This is the value where the force is zero for the L-J type force.
 	Radius = Diameter/2.0;
 	
 	// Using the radius of a body and a 68% packing ratio to find the radius of a global sphere that should hold all the bodies.
@@ -220,31 +223,59 @@ void setup()
 
 __global__ void calculateForces(int N,float *M,float3 *P, float3 *F)
 {
-	int id = threadIdx.x;
+	int id = threadIdx.x;// we are only doing N<1024 so we just need thread index
 	float dx,dy,dz,d,d2,force_mag;
-	if (id<N)
+	if (id<N)//if id is less than the number of balls
 	{
+		//zero out forces
 		F[id].x = 0.0;
 		F[id].y = 0.0;
 		F[id].z = 0.0;
 
 		for(int i=0; i<N; i++)
 		{
-            if (id != i)
-            {
+            if (id == i)// we don't need to calculate the force on ourself
+			{
+				continue;
+			}
+			else
+			{
+				//them minus me 
                 dx = P[i].x - P[id].x;
                 dy = P[i].y - P[id].y;
                 dz = P[i].z - P[id].z;
         		d2 = dx * dx + dy * dy + dz * dz;
                 d = sqrt(d2);
                 force_mag = (G * M[id] * M[i]) / (d2) - (H * M[id] * M[i]) / (d2 * d2);
+				//finds force on me
                 F[id].x += force_mag * dx / d;
                 F[id].y += force_mag * dy / d;
-                F[id].z += force_mag * dz / d;
-            }
-		}
+        	    F[id].z += force_mag * dz / d;
+			}
+        }
 	}
+	// for(int i=0; i<N; i++)
+	// 	{
+	// 		for(int j=i+1; j<N; j++)
+	// 		{
+	// 			dx = P[j].x-P[i].x;
+	// 			dy = P[j].y-P[i].y;
+	// 			dz = P[j].z-P[i].z;
+	// 			d2 = dx*dx + dy*dy + dz*dz;
+	// 			d  = sqrt(d2);
+				
+	// 			force_mag  = (G*M[i]*M[j])/(d2) - (H*M[i]*M[j])/(d2*d2);
+	// 			F[i].x += force_mag*dx/d;
+	// 			F[j].x -= force_mag*dx/d;
+	// 			F[i].y += force_mag*dy/d;
+	// 			F[j].y -= force_mag*dy/d;
+	// 			F[i].z += force_mag*dz/d;
+	// 			F[j].z -= force_mag*dz/d;
+	// 		}
+	// 	}
 }
+
+
 
 __global__ void calculatePositions(int N,float *M,float3 *P, float3 *F, float3 *V,float time, float dt,float damp)
 {
@@ -277,7 +308,7 @@ void nBody()
 	int drawCount = 0;
 	float time = 0.0;
 	float dt = 0.0001;
-
+	//transfer data from CPU to GPU
 	cudaMemcpy(MGPU, M, N * sizeof(float), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
 	cudaMemcpy(PGPU, P, N * sizeof(float3), cudaMemcpyHostToDevice);
@@ -296,6 +327,7 @@ void nBody()
 
 		if(drawCount == DRAW_RATE)
 		{
+			//copies memory from GPU to CPU for drawing
 			cudaMemcpy(P, PGPU, N * sizeof(float3), cudaMemcpyDeviceToHost);
 			cudaErrorCheck(__FILE__, __LINE__);
 			if(DrawFlag) drawPicture();
@@ -312,6 +344,7 @@ void nBody()
 
 void cleanup()
 {
+	//frees memory 
 	free(P);
 	free(V);
 	free(F);
