@@ -129,11 +129,13 @@ void timer()
 {	
 	timeval start, end;
 	long computeTime;
+	
 	drawPicture();
 	gettimeofday(&start, NULL);
-	nBody();
-	gettimeofday(&end, NULL);
-	drawPicture();
+    		nBody();
+    	gettimeofday(&end, NULL);
+    	drawPicture();
+    	
 	computeTime = elaspedTime(start, end);
 	printf("\n The compute time was %ld microseconds.\n\n", computeTime);
 }
@@ -162,16 +164,16 @@ void setup()
 
 
 
-	Diameter = pow(H/G, 1.0/(LJQ - LJP));
+		Diameter = pow(H/G, 1.0/(LJQ - LJP)); // This is the value where the force is zero for the L-J type force.
 	Radius = Diameter/2.0;
-
+	
 	// Using the radius of a body and a 68% packing ratio to find the radius of a global sphere that should hold all the bodies.
 	// Then we double this radius just so we can get all the bodies setup with no problems. 
 	float totalVolume = float(N)*(4.0/3.0)*PI*Radius*Radius*Radius;
 	totalVolume /= 0.68;
 	float totalRadius = pow(3.0*totalVolume/(4.0*PI), 1.0/3.0);
 	GlobeRadius = 2.0*totalRadius;
-
+	
 	// Randomly setting these bodies in the glaobal sphere and setting the initial velosity, inotial force, and mass.
 	for(int i = 0; i < N; i++)
 	{
@@ -185,6 +187,7 @@ void setup()
 			P[i].x = randomRadius*cos(randomAngle1)*sin(randomAngle2);
 			P[i].y = randomRadius*sin(randomAngle1)*sin(randomAngle2);
 			P[i].z = randomRadius*cos(randomAngle2);
+			
 			// Making sure the balls centers are at least a diameter apart.
 			// If they are not throw these positions away and try again.
 			test = 1;
@@ -201,14 +204,15 @@ void setup()
 				}
 			}
 		}
+	
 		V[i].x = 0.0;
 		V[i].y = 0.0;
 		V[i].z = 0.0;
-
+		
 		F[i].x = 0.0;
 		F[i].y = 0.0;
 		F[i].z = 0.0;
-
+		
 		M[i] = 1.0;
 	}
 	printf("\n To start timing type s.\n");
@@ -322,9 +326,9 @@ int main(int argc, char** argv)
 {
 	if( argc < 3)
 	{
-		printf("\n You need to enter the number of bodies (an int)");
+		printf("\n You need to enter the number of bodies (an int)"); 
 		printf("\n and if you want to draw the bodies as they move (1 draw, 0 don't draw),");
-		printf("\n on the command line.\n");
+		printf("\n on the comand line.\n"); 
 		exit(0);
 	}
 	else
@@ -332,13 +336,13 @@ int main(int argc, char** argv)
 		N = atoi(argv[1]);
 		DrawFlag = atoi(argv[2]);
 	}
-
+	
 	setUpDevices();
 	setup();
-
+	
 	int XWindowSize = 1000;
 	int YWindowSize = 1000;
-
+	
 	glutInit(&argc,argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH | GLUT_RGB);
 	glutInitWindowSize(XWindowSize,YWindowSize);
@@ -367,19 +371,18 @@ int main(int argc, char** argv)
 	glEnable(GL_DEPTH_TEST);
 	glutKeyboardFunc(keyPressed);
 	glutDisplayFunc(drawPicture);
-
+	
 	float3 eye = {0.0f, 0.0f, 2.0f*GlobeRadius};
 	float near = 0.2;
 	float far = 5.0*GlobeRadius;
-
+	
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
 	glFrustum(-0.2, 0.2, -0.2, 0.2, near, far);
 	glMatrixMode(GL_MODELVIEW);
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	gluLookAt(eye.x, eye.y, eye.z, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
-
+	
 	glutMainLoop();
-	cleanup();
 	return 0;
 }
