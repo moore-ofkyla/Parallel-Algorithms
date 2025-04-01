@@ -54,7 +54,7 @@ void timer();
 void setup();
 __global__ void leapFrog(float3 *, float3 *, float3 *, float *, float, float, float, float, float, int);
 void nBody();
-void cleanup();
+void cleanup();// to free memory 
 int main(int, char**);
 
 void cudaErrorCheck(const char *file, int line)
@@ -142,7 +142,7 @@ void setup()
     	float d, dx, dy, dz;
     	int test;
     	
-    BlockSize.x = 1024;
+   	BlockSize.x = 1024;
 	BlockSize.y = 1;
 	BlockSize.z = 1;
 	
@@ -236,7 +236,7 @@ __global__ void leapFrog(float3 *p, float3 *v, float3 *f, float *m, float g, flo
 	float dx, dy, dz,d,d2;
 	float force_mag;
 	
-	int i = threadIdx.x + blockDim.x*blockIdx.x;
+	int i = threadIdx.x + blockDim.x*blockIdx.x;//what ball we are working on 
 
 	if(i<n)
 	{
