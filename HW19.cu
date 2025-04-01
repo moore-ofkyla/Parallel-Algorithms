@@ -54,6 +54,7 @@ void timer();
 void setup();
 __global__ void leapFrog(float3 *, float3 *, float3 *, float *, float, float, float, float, float, int);
 void nBody();
+void cleanup();
 int main(int, char**);
 
 void cudaErrorCheck(const char *file, int line)
@@ -78,6 +79,7 @@ void keyPressed(unsigned char key, int x, int y)
 	
 	if(key == 'q')
 	{
+		cleanup();
 		exit(0);
 	}
 }
@@ -140,22 +142,22 @@ void setup()
     	float d, dx, dy, dz;
     	int test;
     	
-    	BlockSize.x = N;
+    BlockSize.x = 1024;
 	BlockSize.y = 1;
 	BlockSize.z = 1;
 	
-	GridSize.x = (N-1)/BlockSize.x+1;
+	GridSize.x =  (N - 1)/BlockSize.x + 1; // This gives us the correct number of blocks
 	GridSize.y = 1;
 	GridSize.z = 1;
     	
-    	Damp = 0.5;
+    Damp = 0.5;
     	
-    	M = (float*)malloc(N*sizeof(float));
-    	P = (float3*)malloc(N*sizeof(float3));
-    	V = (float3*)malloc(N*sizeof(float3));
-    	F = (float3*)malloc(N*sizeof(float3));
+    M = (float*)malloc(N*sizeof(float));
+    P = (float3*)malloc(N*sizeof(float3));
+    V = (float3*)malloc(N*sizeof(float3));
+    F = (float3*)malloc(N*sizeof(float3));
     	
-    	cudaMalloc(&MGPU,N*sizeof(float));
+    cudaMalloc(&MGPU,N*sizeof(float));
 	cudaErrorCheck(__FILE__, __LINE__);
 	cudaMalloc(&PGPU,N*sizeof(float3));
 	cudaErrorCheck(__FILE__, __LINE__);
@@ -233,65 +235,53 @@ __global__ void leapFrog(float3 *p, float3 *v, float3 *f, float *m, float g, flo
 {
 	float dx, dy, dz,d,d2;
 	float force_mag;
-
-	extern __shared__ float3 sharedP[];
-	__shared__ float sharedM[blockDim.x];
 	
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int i = threadIdx.x + blockDim.x*blockIdx.x;
 
-	//if(i>=n) return;
-	
-	f[i].x = 0.0f;
-	f[i].y = 0.0f;
-	f[i].z = 0.0f;
-
-	for(int chunk=0; chunk< n; chunk +=blockDim.x)
+	if(i<n)
 	{
-		int k= chunk+ threadIdx.x;
-		if(k<n)
-		{
-			sharedP[threadIdx.x]=p[k];
-			sharedM[threadIdx.x]=m[k];
-		}
-		__syncthreads();
+	
+		f[i].x = 0.0f;
+		f[i].y = 0.0f;
+		f[i].z = 0.0f;
 
 		for(int j = 0; j < n; j++)
 		{
 			if(i != j)
 			{
-				dx = sharedP[j].x-p[i].x;
-				dy = sharedP[j].y-p[i].y;
-				dz = sharedP[j].z-p[i].z;
+				dx = p[j].x-p[i].x;
+				dy = p[j].y-p[i].y;
+				dz = p[j].z-p[i].z;
 				d2 = dx*dx + dy*dy + dz*dz;
 				d  = sqrt(d2);
 				
-				force_mag  = (g*m[i]*sharedM[j])/(d2) - (h*m[i]*sharedM[j])/(d2*d2);
+				force_mag  = (g*m[i]*m[j])/(d2) - (h*m[i]*m[j])/(d2*d2);
 				f[i].x += force_mag*dx/d;
 				f[i].y += force_mag*dy/d;
 				f[i].z += force_mag*dz/d;
 			}
 		}
-	__syncthreads();
-	
-	if(t == 0.0f)
-	{
-		v[i].x += ((f[i].x-damp*v[i].x)/m[i])*dt/2.0f;
-		v[i].y += ((f[i].y-damp*v[i].y)/m[i])*dt/2.0f;
-		v[i].z += ((f[i].z-damp*v[i].z)/m[i])*dt/2.0f;
-	}
-	else
-	{
-		v[i].x += ((f[i].x-damp*v[i].x)/m[i])*dt;
-		v[i].y += ((f[i].y-damp*v[i].y)/m[i])*dt;
-		v[i].z += ((f[i].z-damp*v[i].z)/m[i])*dt;
-	}
+		__syncthreads();
+		
+		if(t == 0.0f)
+		{
+			v[i].x += ((f[i].x-damp*v[i].x)/m[i])*dt/2.0f;
+			v[i].y += ((f[i].y-damp*v[i].y)/m[i])*dt/2.0f;
+			v[i].z += ((f[i].z-damp*v[i].z)/m[i])*dt/2.0f;
+		}
+		else
+		{
+			v[i].x += ((f[i].x-damp*v[i].x)/m[i])*dt;
+			v[i].y += ((f[i].y-damp*v[i].y)/m[i])*dt;
+			v[i].z += ((f[i].z-damp*v[i].z)/m[i])*dt;
+		}
 
-	p[i].x += v[i].x*dt;
-	p[i].y += v[i].y*dt;
-	p[i].z += v[i].z*dt;
-	__syncthreads();
+		p[i].x += v[i].x*dt;
+		p[i].y += v[i].y*dt;
+		p[i].z += v[i].z*dt;
+		__syncthreads();
+	}
 }
-
 void nBody()
 {
 	int    drawCount = 0; 
@@ -314,6 +304,20 @@ void nBody()
 		drawCount++;
 	}
 }
+
+void cleanup()
+{
+	//frees memory 
+	free(P);
+	free(V);
+	free(F);
+	free(M);
+	cudaFree(PGPU);
+	cudaFree(VGPU);
+	cudaFree(FGPU);
+	cudaFree(MGPU);
+}
+
 
 int main(int argc, char** argv)
 {
@@ -378,8 +382,3 @@ int main(int argc, char** argv)
 	glutMainLoop();
 	return 0;
 }
-
-
-
-
-
