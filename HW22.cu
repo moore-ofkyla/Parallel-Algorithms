@@ -8,15 +8,23 @@
 
  1. Check GPU Availability:
     Ensure that you have at least two GPUs available. If not, report the issue and exit the program.
+	-Done 
 
  2. Handle Odd-Length Vector:
     If the vector length is odd, ensure that you select a half N value that does not exclude the last element of the vector.
+	- N/2 will be for GPU1
+	-N-N/2 will be for GPU2.
+	Ex: if N=5
+		halfN1 = 5/2 = 2
+		halfN2 = 5 - halfN1 = 3
 
  3. Send First Half to GPU 1:
     Send the first half of the vector to the first GPU, and perform the operation of adding a to b.
+	//created memory for GPU1
 
  4. Send Second Half to GPU 2:
     Send the second half of the vector to the second GPU, and again perform the operation of adding a to b.
+	//created memory for GPU2
 
  5. Return Results to the CPU:
     Once both GPUs have completed their computations, transfer the results back to the CPU and verify that the results are correct.
@@ -31,8 +39,8 @@
 
 // Global variables
 float *A_CPU, *B_CPU, *C_CPU; //CPU pointers
-float *A_GPU1, *B_GPU1, *C_GPU1; //GPU pointers
-float *A_GPU2, *B_GPU2, *C_GPU2; //GPU pointers
+float *A_GPU1, *B_GPU1, *C_GPU1; //GPU1 pointers
+float *A_GPU2, *B_GPU2, *C_GPU2; //GPU2 pointers
 dim3 BlockSize; //This variable will hold the Dimensions of your blocks
 dim3 GridSize; //This variable will hold the Dimensions of your grid
 float Tolerance = 0.01;
@@ -209,6 +217,8 @@ void CleanUp()
     cudaFree(A_GPU2);
     cudaFree(B_GPU2);
     cudaFree(C_GPU2);
+
+	
 }
 
 int main()
