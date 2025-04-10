@@ -8,23 +8,15 @@
 
  1. Check GPU Availability:
     Ensure that you have at least two GPUs available. If not, report the issue and exit the program.
-	-Done 
 
  2. Handle Odd-Length Vector:
     If the vector length is odd, ensure that you select a half N value that does not exclude the last element of the vector.
-	- N/2 will be for GPU1
-	-N-N/2 will be for GPU2.
-	Ex: if N=5
-		halfN1 = 5/2 = 2
-		halfN2 = 5 - halfN1 = 3
 
  3. Send First Half to GPU 1:
     Send the first half of the vector to the first GPU, and perform the operation of adding a to b.
-	//created memory for GPU1
 
  4. Send Second Half to GPU 2:
     Send the second half of the vector to the second GPU, and again perform the operation of adding a to b.
-	//created memory for GPU2
 
  5. Return Results to the CPU:
     Once both GPUs have completed their computations, transfer the results back to the CPU and verify that the results are correct.
@@ -39,8 +31,8 @@
 
 // Global variables
 float *A_CPU, *B_CPU, *C_CPU; //CPU pointers
-float *A_GPU1, *B_GPU1, *C_GPU1; //GPU1 pointers
-float *A_GPU2, *B_GPU2, *C_GPU2; //GPU2 pointers
+float *A_GPU1, *B_GPU1, *C_GPU1; //GPU pointers
+float *A_GPU2, *B_GPU2, *C_GPU2; //GPU pointers
 dim3 BlockSize; //This variable will hold the Dimensions of your blocks
 dim3 GridSize; //This variable will hold the Dimensions of your grid
 float Tolerance = 0.01;
@@ -209,16 +201,22 @@ void CleanUp()
 	free(C_CPU);
 	
 	cudaSetDevice(0);
+	cudaErrorCheck(__FILE__, __LINE__);
     cudaFree(A_GPU1);
+	cudaErrorCheck(__FILE__, __LINE__);
     cudaFree(B_GPU1);
+	cudaErrorCheck(__FILE__, __LINE__);
     cudaFree(C_GPU1);
+	cudaErrorCheck(__FILE__, __LINE__);
 
     cudaSetDevice(1);
+	cudaErrorCheck(__FILE__, __LINE__);
     cudaFree(A_GPU2);
+	cudaErrorCheck(__FILE__, __LINE__);
     cudaFree(B_GPU2);
+	cudaErrorCheck(__FILE__, __LINE__);
     cudaFree(C_GPU2);
-
-	
+	cudaErrorCheck(__FILE__, __LINE__);
 }
 
 int main()
@@ -251,25 +249,40 @@ int main()
 	// Adding on the GPU
 	gettimeofday(&start, NULL);
 	
+	//select 1st GPU send up the info for that one
 	cudaSetDevice(0);
     cudaMemcpy(A_GPU1, A_CPU, halfN1 * sizeof(float), cudaMemcpyHostToDevice);
+	cudaErrorCheck(__FILE__, __LINE__);
     cudaMemcpy(B_GPU1, B_CPU, halfN1 * sizeof(float), cudaMemcpyHostToDevice);
+	cudaErrorCheck(__FILE__, __LINE__);
 
+	//select 2nd GPU send up the info for that one
     cudaSetDevice(1);
     cudaMemcpy(A_GPU2, A_CPU + halfN1, halfN2 * sizeof(float), cudaMemcpyHostToDevice);
+	cudaErrorCheck(__FILE__, __LINE__);
     cudaMemcpy(B_GPU2, B_CPU + halfN1, halfN2 * sizeof(float), cudaMemcpyHostToDevice);
+	cudaErrorCheck(__FILE__, __LINE__);
+
 
     // Launch kernels on both GPUs
     cudaSetDevice(0);
     addVectorsGPU<<<(halfN1 + BlockSize.x - 1) / BlockSize.x, BlockSize>>>(A_GPU1, B_GPU1, C_GPU1, halfN1);
+	cudaErrorCheck(__FILE__, __LINE__);
+	cudaDeviceSynchronize();
+	cudaErrorCheck(__FILE__, __LINE__);
 
     cudaSetDevice(1);
     addVectorsGPU<<<(halfN2 + BlockSize.x - 1) / BlockSize.x, BlockSize>>>(A_GPU2, B_GPU2, C_GPU2, halfN2);
+	cudaErrorCheck(__FILE__, __LINE__);
+	cudaDeviceSynchronize();
+	cudaErrorCheck(__FILE__, __LINE__);
+	
 
     // Copy results back to CPU
+	//SELECT 1st GPU, then copy the results back
     cudaSetDevice(0);
     cudaMemcpy(C_CPU, C_GPU1, halfN1 * sizeof(float), cudaMemcpyDeviceToHost);
-
+	//select 2nd GPU, then copy the results back
     cudaSetDevice(1);
     cudaMemcpy(C_CPU + halfN1, C_GPU2, halfN2 * sizeof(float), cudaMemcpyDeviceToHost);
 
