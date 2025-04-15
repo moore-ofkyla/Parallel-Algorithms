@@ -252,36 +252,36 @@ int main()
 	
 	//select 1st GPU send up the info for that one
 	cudaSetDevice(0);
-   	 cudaMemcpyAsync(A_GPU1, A_CPU, halfN1 * sizeof(float), cudaMemcpyHostToDevice);
+   	cudaMemcpyAsync(A_GPU1, A_CPU, halfN1 * sizeof(float), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
-    	cudaMemcpyAsync(B_GPU1, B_CPU, halfN1 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpyAsync(B_GPU1, B_CPU, halfN1 * sizeof(float), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
 
 	//select 2nd GPU send up the info for that one
-    	cudaSetDevice(1);
-    	cudaMemcpyAsync(A_GPU2, A_CPU + halfN1, halfN2 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaSetDevice(1);
+    cudaMemcpyAsync(A_GPU2, A_CPU + halfN1, halfN2 * sizeof(float), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
-    	cudaMemcpyAsync(B_GPU2, B_CPU + halfN1, halfN2 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpyAsync(B_GPU2, B_CPU + halfN1, halfN2 * sizeof(float), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
 
 
     // Launch kernels on both GPUs
-    	cudaSetDevice(0);
-   	addVectorsGPU<<<(halfN1 + BlockSize.x - 1) / BlockSize.x, BlockSize>>>(A_GPU1, B_GPU1, C_GPU1, halfN1);
+    cudaSetDevice(0);
+   	addVectorsGPU<<<(halfN1 - 1) / BlockSize.x+1, BlockSize>>>(A_GPU1, B_GPU1, C_GPU1, halfN1);
 	cudaErrorCheck(__FILE__, __LINE__);
 
-    	cudaSetDevice(1);
-   	 addVectorsGPU<<<(halfN2 + BlockSize.x - 1) / BlockSize.x, BlockSize>>>(A_GPU2, B_GPU2, C_GPU2, halfN2);
+    cudaSetDevice(1);
+   	addVectorsGPU<<<(halfN2 - 1) / BlockSize.x+1, BlockSize>>>(A_GPU2, B_GPU2, C_GPU2, halfN2);
 	cudaErrorCheck(__FILE__, __LINE__);
 	
     // Copy results back to CPU
 	//SELECT 1st GPU, then copy the results back
    	cudaSetDevice(0);
-    	cudaMemcpy(C_CPU, C_GPU1, halfN1 * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(C_CPU, C_GPU1, halfN1 * sizeof(float), cudaMemcpyDeviceToHost);
 	cudaErrorCheck(__FILE__, __LINE__);
 	//select 2nd GPU, then copy the results back
-    	cudaSetDevice(1);
-    	cudaMemcpy(C_CPU + halfN1, C_GPU2, halfN2 * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaSetDevice(1);
+    cudaMemcpy(C_CPU + halfN1, C_GPU2, halfN2 * sizeof(float), cudaMemcpyDeviceToHost);
 	cudaErrorCheck(__FILE__, __LINE__);
 
 	
@@ -318,3 +318,4 @@ int main()
 	
 	return(0);
 }
+
