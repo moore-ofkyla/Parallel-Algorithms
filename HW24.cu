@@ -1,4 +1,4 @@
-// Name: Kyla 
+// Name:
 // nBody code on multiple GPUs. 
 // nvcc HW24.cu -o temp -lglut -lm -lGLU -lGL
 
@@ -35,29 +35,21 @@
 int N;
 float3 *P, *V, *F;
 float *M; 
-float3 *PGPU1, *VGPU1, *FGPU1;
-float3 *PGPU2, *VGPU2, *FGPU2;
-float3 *PFromGPU1, *PFromGPU2;
-float3 *HostFromGPU1, *HostFromGPU2;
-float *MGPU1;
-float *MGPU2;
+float3 *PGPU, *VGPU, *FGPU;
+float *MGPU;
 float GlobeRadius, Diameter, Radius;
 float Damp;
 dim3 BlockSize;
 dim3 GridSize;
-dim3 GridSize2;
-int N1,N2;
 
 // Function prototypes
 void cudaErrorCheck(const char *, int);
 void drawPicture();
-void checkForGPUs();
 void setup();
-__global__ void getForces(float3 *, float3 *, float3 *, float *, float, float, int, float3 *, int);
+__global__ void getForces(float3 *, float3 *, float3 *, float *, float, float, int);
 __global__ void moveBodies(float3 *, float3 *, float3 *, float *, float, float, float, int);
 void nBody();
 int main(int, char**);
-void free();
 
 void cudaErrorCheck(const char *file, int line)
 {
@@ -77,15 +69,9 @@ void drawPicture()
 	
 	glClear(GL_COLOR_BUFFER_BIT);
 	glClear(GL_DEPTH_BUFFER_BIT);
-	//cudaMemcpy vs cudaMemcpyAsync
-	cudaSetDevice(0);
-    cudaMemcpy(P, PGPU1, N1 * sizeof(float3), cudaMemcpyDeviceToHost);
-    cudaErrorCheck(__FILE__, __LINE__);
-
-    cudaSetDevice(1);
-    cudaMemcpy(P + N1, PGPU2, N2 * sizeof(float3), cudaMemcpyDeviceToHost);
-    cudaErrorCheck(__FILE__, __LINE__);
-
+	
+	cudaMemcpyAsync(P, PGPU, N*sizeof(float3), cudaMemcpyDeviceToHost);
+	cudaErrorCheck(__FILE__, __LINE__);
 	
 	glColor3d(1.0,1.0,0.5);
 	for(i=0; i<N; i++)
@@ -99,33 +85,13 @@ void drawPicture()
 	glutSwapBuffers();
 }
 
-void checkForGPUs()
-{
-	int deviceCount;
-	cudaErrorCheck(__FILE__, __LINE__);
-
-	cudaGetDeviceCount(&deviceCount);
-	
-	if(deviceCount < 2)
-	{
-		printf("\n\n You do not have enough GPUs to run this code. You need at least 2 GPUs.\n");
-		exit(0);
-	}
-	else
-	{
-		printf("\n\n You have %d GPUs available to use.\n", deviceCount);
-	}
-}
-
 void setup()
 {
     	float randomAngle1, randomAngle2, randomRadius;
     	float d, dx, dy, dz;
     	int test;
     	
-    	N = 100;
-		N1=N/2;
-		N2=N-N1;
+    	N = 1000;
     	
     	BlockSize.x = BLOCK_SIZE;
 	BlockSize.y = 1;
@@ -135,42 +101,20 @@ void setup()
 	GridSize.y = 1;
 	GridSize.z = 1;
 	
-	//create a second grid size for the second GPU
-	GridSize2.x = (N2 - 1) / BlockSize.x + 1; // For GPU 1
-	GridSize2.y = 1;
-	GridSize2.z = 1;
     	Damp = 0.5;
     	
     	M = (float*)malloc(N*sizeof(float));
     	P = (float3*)malloc(N*sizeof(float3));
     	V = (float3*)malloc(N*sizeof(float3));
     	F = (float3*)malloc(N*sizeof(float3));
-		HostFromGPU1 = (float3 *)malloc(N1 * sizeof(float3)); // Buffer for positions from GPU 0
-		HostFromGPU2 = (float3 *)malloc(N2 * sizeof(float3)); // Buffer for positions from GPU 1
-    
-	cudaSetDevice(0);	
-    cudaMalloc(&MGPU1,N1*sizeof(float));
+    	
+    	cudaMalloc(&MGPU,N*sizeof(float));
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&PGPU1,N1*sizeof(float3));
+	cudaMalloc(&PGPU,N*sizeof(float3));
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&VGPU1,N1*sizeof(float3));
+	cudaMalloc(&VGPU,N*sizeof(float3));
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&FGPU1,N1*sizeof(float3));
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&PFromGPU2, N2 * sizeof(float3)); // Buffer on GPU 0 for positions from GPU 1
-	cudaErrorCheck(__FILE__, __LINE__);
-
-
-	cudaSetDevice(1);
-	cudaMalloc(&MGPU2,N2*sizeof(float));
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&PGPU2,N2*sizeof(float3));
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&VGPU2,N2*sizeof(float3));
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&FGPU2,N2*sizeof(float3));
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&PFromGPU1, N1 * sizeof(float3)); // Buffer on GPU 1 for positions from GPU 0
+	cudaMalloc(&FGPU,N*sizeof(float3));
 	cudaErrorCheck(__FILE__, __LINE__);
     	
 	Diameter = pow(H/G, 1.0/(LJQ - LJP)); // This is the value where the force is zero for the L-J type force.
@@ -225,22 +169,17 @@ void setup()
 		M[i] = 1.0;
 	}
 	
-// GPU 1
-cudaSetDevice(0);
-cudaMemcpy(PGPU1, P, N1 * sizeof(float3), cudaMemcpyHostToDevice);
-cudaMemcpy(VGPU1, V, N1 * sizeof(float3), cudaMemcpyHostToDevice);
-cudaMemcpy(FGPU1, F, N1 * sizeof(float3), cudaMemcpyHostToDevice);
-cudaMemcpy(MGPU1, M, N1 * sizeof(float), cudaMemcpyHostToDevice);
-
-// GPU 2
-cudaSetDevice(1);
-cudaMemcpy(PGPU2, P + N1, N2 * sizeof(float3), cudaMemcpyHostToDevice);
-cudaMemcpy(VGPU2, V + N1, N2 * sizeof(float3), cudaMemcpyHostToDevice);
-cudaMemcpy(FGPU2, F + N1, N2 * sizeof(float3), cudaMemcpyHostToDevice);
-cudaMemcpy(MGPU2, M + N1, N2 * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(PGPU, P, N*sizeof(float3), cudaMemcpyHostToDevice);
+	cudaErrorCheck(__FILE__, __LINE__);
+	cudaMemcpyAsync(VGPU, V, N*sizeof(float3), cudaMemcpyHostToDevice);
+	cudaErrorCheck(__FILE__, __LINE__);
+	cudaMemcpyAsync(FGPU, F, N*sizeof(float3), cudaMemcpyHostToDevice);
+	cudaErrorCheck(__FILE__, __LINE__);
+	cudaMemcpyAsync(MGPU, M, N*sizeof(float), cudaMemcpyHostToDevice);
+	cudaErrorCheck(__FILE__, __LINE__);
 }
 
-__global__ void getForces(float3 *p, float3 *v, float3 *f, float *m, float g, float h, int n, float3 *peerP, int peerN)
+__global__ void getForces(float3 *p, float3 *v, float3 *f, float *m, float g, float h, int n)
 {
 	float dx, dy, dz,d,d2;
 	float force_mag;
@@ -269,20 +208,6 @@ __global__ void getForces(float3 *p, float3 *v, float3 *f, float *m, float g, fl
 				f[i].z += force_mag*dz/d;
 			}
 		}
-		 // Interactions with bodies from the other GPU
-        for (int j = 0; j < peerN; j++)
-        {
-            dx = peerP[j].x - p[i].x;
-            dy = peerP[j].y - p[i].y;
-            dz = peerP[j].z - p[i].z;
-            d2 = dx * dx + dy * dy + dz * dz;
-            d = sqrt(d2);
-
-            force_mag = (g * m[i]) / (d2) - (h * m[i]) / (d2 * d2);
-            f[i].x += force_mag * dx / d;
-            f[i].y += force_mag * dy / d;
-            f[i].z += force_mag * dz / d;
-        }
 	}
 }
 
@@ -311,128 +236,31 @@ __global__ void moveBodies(float3 *p, float3 *v, float3 *f, float *m, float damp
 	}
 }
 
-// void nBody()
-// {
-// 	int    drawCount = 0; 
-// 	float  t = 0.0;
-// 	float dt = 0.0001;
-
-// 	while(t < RUN_TIME)
-// 	{
-// 	cudaMemcpyPeer(PFromGPU1, 1, PGPU1, 0, N1 * sizeof(float3));
-//         cudaErrorCheck(__FILE__, __LINE__);
-//         cudaMemcpyPeer(PFromGPU2, 0, PGPU2, 1, N2 * sizeof(float3));
-//         cudaErrorCheck(__FILE__, __LINE__);
-
-// //are these grid and block sizes okay to launch with?
-// cudaSetDevice(0);
-// cudaErrorCheck(__FILE__, __LINE__);
-// getForces<<<GridSize, BlockSize>>>(PGPU1, VGPU1, FGPU1, MGPU1, G, H, N1,PFromGPU2, N2);
-// cudaErrorCheck(__FILE__, __LINE__);
-// moveBodies<<<GridSize, BlockSize>>>(PGPU1, VGPU1, FGPU1, MGPU1, Damp, DT, t, N1);
-// cudaErrorCheck(__FILE__, __LINE__);
-//  cudaDeviceSynchronize(); 
-
-// cudaSetDevice(1);
-// cudaErrorCheck(__FILE__, __LINE__);
-// getForces<<<GridSize2, BlockSize>>>(PGPU2, VGPU2, FGPU2, MGPU2, G, H, N2,PFromGPU1, N1);
-// cudaErrorCheck(__FILE__, __LINE__);
-// moveBodies<<<GridSize2, BlockSize>>>(PGPU2, VGPU2, FGPU2, MGPU2, Damp, DT, t, N2);
-// cudaErrorCheck(__FILE__, __LINE__);
-// cudaDeviceSynchronize(); 
-// 		if(drawCount == DRAW_RATE) 
-// 		{	
-// 			drawPicture();
-// 			drawCount = 0;
-// 		}
-		
-// 		t += dt;
-// 		drawCount++;
-// 	}
-// }
-void free()
-{
-	cudaSetDevice(0);
-	cudaFree(MGPU1);
-	cudaFree(PGPU1);
-	cudaFree(VGPU1);
-	cudaFree(FGPU1);
-	cudaFree(PFromGPU2);
-
-
-	cudaSetDevice(1);
-	cudaFree(MGPU2);
-	cudaFree(PGPU2);
-	cudaFree(VGPU2);
-	cudaFree(FGPU2);
-	cudaFree(PFromGPU1);
-
-	free(M);
-	free(P);
-	free(V);
-	free(F);
-	free(HostFromGPU1);
-	free(HostFromGPU2);
-}
-
 void nBody()
 {
-    int drawCount = 0; 
-    float t = 0.0;
-    float dt = 0.0001;
+	int    drawCount = 0; 
+	float  t = 0.0;
+	float dt = 0.0001;
 
-    while (t < RUN_TIME)
-    {
-        // Copy positions from GPU 0 to host memory
-        cudaSetDevice(0);
-        cudaMemcpy(HostFromGPU1, PGPU1, N1 * sizeof(float3), cudaMemcpyDeviceToHost);
-        cudaErrorCheck(__FILE__, __LINE__);
-
-        // Copy positions from GPU 1 to host memory
-        cudaSetDevice(1);
-        cudaMemcpy(HostFromGPU2, PGPU2, N2 * sizeof(float3), cudaMemcpyDeviceToHost);
-        cudaErrorCheck(__FILE__, __LINE__);
-
-        // Copy positions from host memory to GPU 1
-        cudaSetDevice(1);
-        cudaMemcpy(PFromGPU1, HostFromGPU1, N1 * sizeof(float3), cudaMemcpyHostToDevice);
-        cudaErrorCheck(__FILE__, __LINE__);
-
-        // Copy positions from host memory to GPU 0
-        cudaSetDevice(0);
-        cudaMemcpy(PFromGPU2, HostFromGPU2, N2 * sizeof(float3), cudaMemcpyHostToDevice);
-        cudaErrorCheck(__FILE__, __LINE__);
-
-        // GPU 0
-        cudaSetDevice(0);
-        getForces<<<GridSize, BlockSize>>>(PGPU1, VGPU1, FGPU1, MGPU1, G, H, N1, PFromGPU2, N2);
-        cudaErrorCheck(__FILE__, __LINE__);
-        moveBodies<<<GridSize, BlockSize>>>(PGPU1, VGPU1, FGPU1, MGPU1, Damp, DT, t, N1);
-        cudaErrorCheck(__FILE__, __LINE__);
-        cudaDeviceSynchronize();
-
-        // GPU 1
-        cudaSetDevice(1);
-        getForces<<<GridSize2, BlockSize>>>(PGPU2, VGPU2, FGPU2, MGPU2, G, H, N2, PFromGPU1, N1);
-        cudaErrorCheck(__FILE__, __LINE__);
-        moveBodies<<<GridSize2, BlockSize>>>(PGPU2, VGPU2, FGPU2, MGPU2, Damp, DT, t, N2);
-        cudaErrorCheck(__FILE__, __LINE__);
-        cudaDeviceSynchronize();
-
-        // Draw the picture at the specified rate
-        if (drawCount == DRAW_RATE) 
-        {	
-            drawPicture();
-            drawCount = 0;
-        }
-
-        t += dt;
-        drawCount++;
-    }
+	while(t < RUN_TIME)
+	{
+		getForces<<<GridSize,BlockSize>>>(PGPU, VGPU, FGPU, MGPU, G, H, N);
+		cudaErrorCheck(__FILE__, __LINE__);
+		moveBodies<<<GridSize,BlockSize>>>(PGPU, VGPU, FGPU, MGPU, Damp, dt, t, N);
+		cudaErrorCheck(__FILE__, __LINE__);
+		if(drawCount == DRAW_RATE) 
+		{	
+			drawPicture();
+			drawCount = 0;
+		}
+		
+		t += dt;
+		drawCount++;
+	}
 }
+
 int main(int argc, char** argv)
 {
-	checkForGPUs();
 	setup();
 	
 	int XWindowSize = 1000;
@@ -479,7 +307,6 @@ int main(int argc, char** argv)
 	gluLookAt(eye.x, eye.y, eye.z, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
 	
 	glutMainLoop();
-	free();
 	return 0;
 }
 
