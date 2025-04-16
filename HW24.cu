@@ -1,4 +1,4 @@
-// Name:
+// Name:Kyla
 // nBody code on multiple GPUs. 
 // nvcc HW24.cu -o temp -lglut -lm -lGLU -lGL
 
@@ -33,17 +33,23 @@
 
 // Globals
 int N;
+int N1,N2;
 float3 *P, *V, *F;
 float *M; 
-float3 *PGPU, *VGPU, *FGPU;
-float *MGPU;
+float3 *PGPU1, *VGPU1, *FGPU1;
+float *MGPU1;
+float3 *PGPU2, *VGPU2, *FGPU2;
+float *MGPU2;
+
 float GlobeRadius, Diameter, Radius;
 float Damp;
 dim3 BlockSize;
-dim3 GridSize;
+dim3 GridSize1;
+dim3 GridSize2;
 
 // Function prototypes
 void cudaErrorCheck(const char *, int);
+void checkForGPUs();
 void drawPicture();
 void setup();
 __global__ void getForces(float3 *, float3 *, float3 *, float *, float, float, int);
@@ -60,6 +66,21 @@ void cudaErrorCheck(const char *file, int line)
 	{
 		printf("\n CUDA ERROR: message = %s, File = %s, Line = %d\n", cudaGetErrorString(error), file, line);
 		exit(0);
+	}
+}
+void checkForGPUs()
+{
+	int deviceCount;
+	cudaGetDeviceCount(&deviceCount);
+	
+	if(deviceCount < 2)
+	{
+		printf("\n\n You do not have enough GPUs to run this code. You need at least 2 GPUs.\n");
+		exit(0);
+	}
+	else
+	{
+		printf("\n\n You have %d GPUs available to use.\n", deviceCount);
 	}
 }
 
@@ -92,14 +113,21 @@ void setup()
     	int test;
     	
     	N = 1000;
-    	
+
+
+	//works for two GPUs
+	//
     	BlockSize.x = BLOCK_SIZE;
 	BlockSize.y = 1;
 	BlockSize.z = 1;
 	
-	GridSize.x = (N - 1)/BlockSize.x + 1; //Makes enough blocks to deal with the whole vector.
-	GridSize.y = 1;
-	GridSize.z = 1;
+	GridSize1.x = (N1 - 1)/BlockSize.x + 1; //Makes enough blocks to deal with the whole vector.
+	GridSize1.y = 1;
+	GridSize1.z = 1;
+
+	GridSize2.x = (N2 - 1)/BlockSize.x + 1; //Makes enough blocks to deal with the whole vector.
+	GridSize2.y = 1;
+	GridSize2.z = 1;
 	
     	Damp = 0.5;
     	
@@ -108,13 +136,22 @@ void setup()
     	V = (float3*)malloc(N*sizeof(float3));
     	F = (float3*)malloc(N*sizeof(float3));
     	
-    	cudaMalloc(&MGPU,N*sizeof(float));
+    	cudaMalloc(&MGPU1,N1*sizeof(float));
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&PGPU,N*sizeof(float3));
+	cudaMalloc(&PGPU1,N*sizeof(float3));
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&VGPU,N*sizeof(float3));
+	cudaMalloc(&VGPU1,N*sizeof(float3));
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&FGPU,N*sizeof(float3));
+	cudaMalloc(&FGPU1,N1*sizeof(float3));
+	cudaErrorCheck(__FILE__, __LINE__);
+
+	cudaMalloc(&MGPU1,N*sizeof(float));
+	cudaErrorCheck(__FILE__, __LINE__);
+	cudaMalloc(&PGPU1,N*sizeof(float3));
+	cudaErrorCheck(__FILE__, __LINE__);
+	cudaMalloc(&VGPU1,N*sizeof(float3));
+	cudaErrorCheck(__FILE__, __LINE__);
+	cudaMalloc(&FGPU1,N*sizeof(float3));
 	cudaErrorCheck(__FILE__, __LINE__);
     	
 	Diameter = pow(H/G, 1.0/(LJQ - LJP)); // This is the value where the force is zero for the L-J type force.
@@ -168,15 +205,27 @@ void setup()
 		
 		M[i] = 1.0;
 	}
-	
-	cudaMemcpyAsync(PGPU, P, N*sizeof(float3), cudaMemcpyHostToDevice);
+	//or just send it all...
+	cudaSetDevice(0);
+	cudaMemcpyAsync(PGPU1, P, N*sizeof(float3), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMemcpyAsync(VGPU, V, N*sizeof(float3), cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(VGPU1, V, N*sizeof(float3), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMemcpyAsync(FGPU, F, N*sizeof(float3), cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(FGPU1, F, N*sizeof(float3), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMemcpyAsync(MGPU, M, N*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(MGPU1, M, N*sizeof(float), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
+
+	cudaMemcpyAsync(PGPU2, P, N*sizeof(float3), cudaMemcpyHostToDevice);
+	cudaErrorCheck(__FILE__, __LINE__);
+	cudaMemcpyAsync(VGPU2, V, N*sizeof(float3), cudaMemcpyHostToDevice);
+	cudaErrorCheck(__FILE__, __LINE__);
+	cudaMemcpyAsync(FGPU2, F, N*sizeof(float3), cudaMemcpyHostToDevice);
+	cudaErrorCheck(__FILE__, __LINE__);
+	cudaMemcpyAsync(MGPU2, M, N*sizeof(float), cudaMemcpyHostToDevice);
+	cudaErrorCheck(__FILE__, __LINE__);
+
+
 }
 
 __global__ void getForces(float3 *p, float3 *v, float3 *f, float *m, float g, float h, int n)
@@ -261,6 +310,7 @@ void nBody()
 
 int main(int argc, char** argv)
 {
+	checkForGPUs();
 	setup();
 	
 	int XWindowSize = 1000;
