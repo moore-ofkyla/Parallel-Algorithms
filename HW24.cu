@@ -358,7 +358,7 @@ void nBody()
 
     while (t < RUN_TIME)
     {
-        
+        	//calling Kyle
 		cudaMemcpyPeer(PFromGPU1, 1, PGPU1, 0, N1 * sizeof(float3));
 		cudaErrorCheck(__FILE__, __LINE__);
 		cudaMemcpyPeer(PFromGPU2, 0, PGPU2, 1, N2 * sizeof(float3));
