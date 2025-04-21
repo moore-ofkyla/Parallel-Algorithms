@@ -117,7 +117,7 @@ void setup()
 		BlockSize.y = 1;
 		BlockSize.z = 1;
 		
-		GridSize.x = (workloadPerGPU + BlockSize.x - 1) / BlockSize.x;// This gives us the correct number of blocks.
+		GridSize.x = (WorkloadPerGPU + BlockSize.x - 1) / BlockSize.x;// This gives us the correct number of blocks.
 		GridSize.y = 1;
 		GridSize.z = 1;
 	}
@@ -312,29 +312,6 @@ void nBody()
 			cudaDeviceSynchronize();
 		}
 			
-		
-		// Copying memory between GPUs. It my seem like you need to also copy velocities as well but velocities are only updated with 
-		// information from it's own thread.
-		// Copying 1st half of body positions updated on device 0 to devive 1. 
-		cudaSetDevice(0);	
-		cudaMemcpyAsync(PGPU1, PGPU0, HalfN*sizeof(float3), cudaMemcpyDeviceToDevice);
-		cudaErrorCheck(__FILE__, __LINE__);
-		
-		// Copying 2nd half of body positions updated on device 1 to devive 0.
-		cudaSetDevice(1);	
-		cudaMemcpyAsync(&PGPU0[HalfN], &PGPU1[HalfN], HalfN*sizeof(float3), cudaMemcpyDeviceToDevice);
-		cudaErrorCheck(__FILE__, __LINE__);
-		
-		// Syncing CPU with device 0.
-		cudaSetDevice(0);
-		cudaDeviceSynchronize();
-		cudaErrorCheck(__FILE__, __LINE__);
-		
-		// Syncing CPU with device 1
-		cudaSetDevice(1);
-		cudaDeviceSynchronize();
-		cudaErrorCheck(__FILE__, __LINE__);
-		
 
 		if(drawCount == DRAW_RATE) 
 		{	
