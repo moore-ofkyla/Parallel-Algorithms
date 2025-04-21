@@ -34,14 +34,13 @@
 
 // Globals
 int N;
-int HalfN; // Half the vector size
+int *NPerGPU; // Half the vector size
 int NumberOfGpus;
 float3 *P, *V, *F;
 float *M; 
-float3 *PGPU0, *VGPU0, *FGPU0;
-float *MGPU0;
-float3 *PGPU1, *VGPU1, *FGPU1;
-float *MGPU1;
+float3 **PGPU, **VGPU, **FGPU;
+float **MGPU;
+
 float GlobeRadius, Diameter, Radius;
 float Damp;
 dim3 BlockSize;
@@ -104,20 +103,29 @@ void setup()
 		printf("\n Dude, you don't even have a GPU. Sorry, you can't play with us. Call NVIDIA and buy a GPU — loser!\n");
 		exit(0);
 	}
-	else if(NumberOfGpus == 1)
-	{
-		printf("\n Dude you only bought one GPU. Sorry you still can't play with us!\n");
-		//exit(0);
-	}
-	else if(2 <= NumberOfGpus)
+	else if(1 <= NumberOfGpus)
 	{	
-		HalfN = (N + (N%2))/2;
 		
+		PGPU = (float3 **)malloc(NumberOfGpus * sizeof(float3 *));
+		VGPU = (float3 **)malloc(NumberOfGpus * sizeof(float3 *));
+		FGPU = (float3 **)malloc(NumberOfGpus * sizeof(float3 *));
+		MGPU = (float **)malloc(NumberOfGpus * sizeof(float *));
+		 *NPerGPU = (int *)malloc(NumberOfGpus * sizeof(int));
+		int base = N / NumberOfGpus;
+		int rem = N % NumberOfGpus;
+		for (int i = 0; i < NumberOfGpus; ++i)
+		    NPerGPU[i] = base + (i < rem ? 1 : 0);
+
+		int *offsets = (int *)malloc(NumberOfGpus * sizeof(int));
+		offsets[0] = 0;
+		for (int i = 1; i < NumberOfGpus; ++i)
+		    offsets[i] = offsets[i-1] + NPerGPU[i-1];
+
 		BlockSize.x = 128;
 		BlockSize.y = 1;
 		BlockSize.z = 1;
 		
-		GridSize.x = (HalfN - 1)/BlockSize.x + 1; // This gives us the correct number of blocks.
+		GridSize.x = (NPerGPU - 1)/BlockSize.x + 1; // This gives us the correct number of blocks.
 		GridSize.y = 1;
 		GridSize.z = 1;
 	}
@@ -140,29 +148,16 @@ void setup()
     	// done for positions but I did it for all for completness incase the code gets used for a
     	// more complicated force function.
     	
-    	int nn = 2*HalfN;
-    	// Device "GPU0" Memory
-	cudaSetDevice(0);
-    	cudaMalloc(&MGPU0,nn*sizeof(float));
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&PGPU0,nn*sizeof(float3));
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&VGPU0,nn*sizeof(float3));
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&FGPU0,nn*sizeof(float3));
-	cudaErrorCheck(__FILE__, __LINE__);
-	
-	// Device "GPU1" Memory
-	cudaSetDevice(1);
-    	cudaMalloc(&MGPU1,nn*sizeof(float));
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&PGPU1,nn*sizeof(float3));
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&VGPU1,nn*sizeof(float3));
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMalloc(&FGPU1,nn*sizeof(float3));
-	cudaErrorCheck(__FILE__, __LINE__);
-    	
+    	for(int i=0;i<NumberOfGpus;i++)
+	{
+	cudaSetDevice(i);
+	cudaMalloc(&PGPU[i],N*sizeof(float3));
+	cudaMalloc(&VGPU[i],N*sizeof(float3));
+	cudaMalloc(&FGPU[i],N*sizeof(float3));
+	cudaMalloc(&MGPU[i],N*sizeof(float));	
+
+	}
+	    	
 	Diameter = pow(H/G, 1.0/(LJQ - LJP)); // This is the value where the force is zero for the L-J type force.
 	Radius = Diameter/2.0;
 	
@@ -214,28 +209,21 @@ void setup()
 		
 		M[i] = 1.0;
 	}
-	
+
+	for(int i=0;i<NumberOfGpus;i++)
+{
 	// Device "GPU0" Memory
-	cudaSetDevice(0);
-	cudaMemcpyAsync(PGPU0, P, N*sizeof(float3), cudaMemcpyHostToDevice);
+	cudaSetDevice(i);
+	cudaMemcpyAsync(PGPU[i], P, N*sizeof(float3), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMemcpyAsync(VGPU0, V, N*sizeof(float3), cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(VGPU[i], V, N*sizeof(float3), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMemcpyAsync(FGPU0, F, N*sizeof(float3), cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(FGPU[i], F, N*sizeof(float3), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMemcpyAsync(MGPU0, M, N*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(MGPU[i], M, N*sizeof(float), cudaMemcpyHostToDevice);
 	cudaErrorCheck(__FILE__, __LINE__);
+}
 	
-	// Device "GPU1" Memory
-	cudaSetDevice(1);
-	cudaMemcpyAsync(PGPU1, P, N*sizeof(float3), cudaMemcpyHostToDevice);
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMemcpyAsync(VGPU1, V, N*sizeof(float3), cudaMemcpyHostToDevice);
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMemcpyAsync(FGPU1, F, N*sizeof(float3), cudaMemcpyHostToDevice);
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMemcpyAsync(MGPU1, M, N*sizeof(float), cudaMemcpyHostToDevice);
-	cudaErrorCheck(__FILE__, __LINE__);
 		
 	printf("\n Setup finished.\n");
 }
