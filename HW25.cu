@@ -1,4 +1,4 @@
-// Name:Kyla Moore
+// Name: Kyla Moore
 // nBody run on all available GPUs. 
 // nvcc HW25.cu -o temp -lglut -lm -lGLU -lGL
 
@@ -34,13 +34,11 @@
 
 // Globals
 int N;
-int *NPerGPU; // Half the vector size
 int NumberOfGpus;
 float3 *P, *V, *F;
 float *M; 
-float3 **PGPU, **VGPU, **FGPU;
-float **MGPU;
-
+float3 **PGPUs, **VGPUs, **FGPUs;
+float **MGPUs;
 float GlobeRadius, Diameter, Radius;
 float Damp;
 dim3 BlockSize;
@@ -50,125 +48,103 @@ dim3 GridSize;
 void cudaErrorCheck(const char *, int);
 void drawPicture();
 void setup();
-__global__ void getForces(float3 *, float3 *, float3 *, float *, float, float, int, int, int);
-__global__ void moveBodies(float3 *, float3 *, float3 *, float *, float, float, float, int, int, int);
+__global__ void getForces(float3 *, float3 *, float *, float3 *, float, float, int, int, int);
+__global__ void moveBodies(float3 *, float3 *, float3 *, float *, float, float, float, int, int);
 void nBody();
 int main(int, char**);
 
 void cudaErrorCheck(const char *file, int line)
 {
-	cudaError_t  error;
-	error = cudaGetLastError();
+    cudaError_t  error;
+    error = cudaGetLastError();
 
-	if(error != cudaSuccess)
-	{
-		printf("\n CUDA ERROR: message = %s, File = %s, Line = %d\n", cudaGetErrorString(error), file, line);
-		exit(0);
-	}
+    if(error != cudaSuccess)
+    {
+        printf("\n CUDA ERROR: message = %s, File = %s, Line = %d\n", cudaGetErrorString(error), file, line);
+        exit(0);
+    }
 }
 
 void drawPicture()
 {
-	glClear(GL_COLOR_BUFFER_BIT);
-	glClear(GL_DEPTH_BUFFER_BIT);
-	
-	cudaSetDevice(0);
-	cudaMemcpyAsync(P, PGPU0, N*sizeof(float3), cudaMemcpyDeviceToHost);
-	cudaErrorCheck(__FILE__, __LINE__);
-	
-	glColor3d(1.0,1.0,0.5);
-	
-	for(int i=0; i<N; i++)
-	{
-		glPushMatrix();
-		glTranslatef(P[i].x, P[i].y, P[i].z);
-		glutSolidSphere(Radius,20,20);
-		glPopMatrix();
-	}
-	
-	glutSwapBuffers();
+    glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    for (int i = 0; i < NumberOfGpus; i++) {
+        int offset = (i * N) / NumberOfGpus;
+		//offset represents the starting index of the GPU's workload.
+        int workload = ((i + 1) * N) / NumberOfGpus - offset;
+
+        cudaSetDevice(i);
+        cudaMemcpyAsync(&P[offset], &PGPUs[i][offset], workload * sizeof(float3), cudaMemcpyDeviceToHost);
+        //P[offset] is the host array where we want to copy the data to.
+		//PGPUs[i][offset] is the device array where we want to copy the data from.
+		cudaErrorCheck(__FILE__, __LINE__);
+    }
+
+    glColor3d(1.0, 1.0, 0.5); 
+    for (int i = 0; i < N; i++) {
+        glPushMatrix();
+        glTranslatef(P[i].x, P[i].y, P[i].z);
+        glutSolidSphere(Radius, 20, 20);    
+        glPopMatrix();
+    }
+
+    glutSwapBuffers(); 
 }
 
 void setup()
 {
-    	float randomAngle1, randomAngle2, randomRadius;
-    	float d, dx, dy, dz;
-    	int test;
-	
-	N = 101;
-	
-	cudaGetDeviceCount(&NumberOfGpus);
+    float randomAngle1, randomAngle2, randomRadius;
+    float d, dx, dy, dz;
+    int test;
+
+    N = 201;
+
+    cudaGetDeviceCount(&NumberOfGpus);
 	if(NumberOfGpus == 0)
 	{
 		printf("\n Dude, you don't even have a GPU. Sorry, you can't play with us. Call NVIDIA and buy a GPU — loser!\n");
 		exit(0);
 	}
 	else if(1 <= NumberOfGpus)
-	{	
-		
-		PGPU = (float3 **)malloc(NumberOfGpus * sizeof(float3 *));
-		VGPU = (float3 **)malloc(NumberOfGpus * sizeof(float3 *));
-		FGPU = (float3 **)malloc(NumberOfGpus * sizeof(float3 *));
-		MGPU = (float **)malloc(NumberOfGpus * sizeof(float *));
-		 *NPerGPU = (int *)malloc(NumberOfGpus * sizeof(int));
-		int base = N / NumberOfGpus;
-		int rem = N % NumberOfGpus;
-		for (int i = 0; i < NumberOfGpus; ++i)
-		    NPerGPU[i] = base + (i < rem ? 1 : 0);
-
-		int *offsets = (int *)malloc(NumberOfGpus * sizeof(int));
-		offsets[0] = 0;
-		for (int i = 1; i < NumberOfGpus; ++i)
-		    offsets[i] = offsets[i-1] + NPerGPU[i-1];
-
-		BlockSize.x = 128;
-		BlockSize.y = 1;
-		BlockSize.z = 1;
-		
-		GridSize.x = (NPerGPU - 1)/BlockSize.x + 1; // This gives us the correct number of blocks.
-		GridSize.y = 1;
-		GridSize.z = 1;
-	}
-	else
 	{
-		printf("\n Dude, you have an uncountable number of GPUs? Not even Chuck Norris can do that!\n");
-		printf("\n We don't play with liars!\n");
-		exit(0);
+    printf("\n Number of GPUs detected: %d\n", NumberOfGpus);
 	}
-	
-    	Damp = 0.5;
-    	
-    	M = (float*)malloc(N*sizeof(float));
-    	P = (float3*)malloc(N*sizeof(float3));
-    	V = (float3*)malloc(N*sizeof(float3));
-    	F = (float3*)malloc(N*sizeof(float3));
-    	
-    	// !! Important: Setting the number of bodies a little bigger if it is not even or you will 
-    	// get a core dump because you will be copying memory you do not own. This only needs to be
-    	// done for positions but I did it for all for completness incase the code gets used for a
-    	// more complicated force function.
-    	
-    	for(int i=0;i<NumberOfGpus;i++)
-	{
-	cudaSetDevice(i);
-	cudaMalloc(&PGPU[i],N*sizeof(float3));
-	cudaMalloc(&VGPU[i],N*sizeof(float3));
-	cudaMalloc(&FGPU[i],N*sizeof(float3));
-	cudaMalloc(&MGPU[i],N*sizeof(float));	
 
-	}
-	    	
-	Diameter = pow(H/G, 1.0/(LJQ - LJP)); // This is the value where the force is zero for the L-J type force.
-	Radius = Diameter/2.0;
-	
+    BlockSize.x = BLOCK_SIZE;
+    BlockSize.y = 1;
+    BlockSize.z = 1;
+
+    int bodiesPerGpu = (N + NumberOfGpus - 1) / NumberOfGpus;
+	// This is the number of bodies that each GPU will be responsible for.
+    GridSize.x = (bodiesPerGpu - 1) / BlockSize.x + 1;
+    GridSize.y = 1;
+    GridSize.z = 1;
+
+    Damp = 0.5;
+
+    M = (float *)malloc(N * sizeof(float));
+    P = (float3 *)malloc(N * sizeof(float3));
+    V = (float3 *)malloc(N * sizeof(float3));
+    F = (float3 *)malloc(N * sizeof(float3));
+
+    PGPUs = (float3 **)malloc(NumberOfGpus * sizeof(float3 *));
+    VGPUs = (float3 **)malloc(NumberOfGpus * sizeof(float3 *));
+    FGPUs = (float3 **)malloc(NumberOfGpus * sizeof(float3 *));
+    MGPUs = (float **)malloc(NumberOfGpus * sizeof(float *));
+
+    Diameter = pow(H / G, 1.0 / (LJQ - LJP));
+    Radius = Diameter / 2.0;
+
 	// Using the radius of a body and a 68% packing ratio to find the radius of a global sphere that should hold all the bodies.
 	// Then we double this radius just so we can get all the bodies setup with no problems. 
 	float totalVolume = float(N)*(4.0/3.0)*PI*Radius*Radius*Radius;
 	totalVolume /= 0.68;
 	float totalRadius = pow(3.0*totalVolume/(4.0*PI), 1.0/3.0);
 	GlobeRadius = 2.0*totalRadius;
-	
-	// Randomly setting these bodies in the glaobal sphere and setting the initial velosity, inotial force, and mass.
+
+    // Randomly setting these bodies in the glaobal sphere and setting the initial velosity, inotial force, and mass.
 	for(int i = 0; i < N; i++)
 	{
 		test = 0;
@@ -209,218 +185,166 @@ void setup()
 		
 		M[i] = 1.0;
 	}
+    for (int i = 0; i < NumberOfGpus; i++) {
+        int offset = (i * N) / NumberOfGpus;
+        int workload = ((i + 1) * N) / NumberOfGpus - offset;
 
-	for(int i=0;i<NumberOfGpus;i++)
-{
-	// Device "GPU0" Memory
-	cudaSetDevice(i);
-	cudaMemcpyAsync(PGPU[i], P, N*sizeof(float3), cudaMemcpyHostToDevice);
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMemcpyAsync(VGPU[i], V, N*sizeof(float3), cudaMemcpyHostToDevice);
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMemcpyAsync(FGPU[i], F, N*sizeof(float3), cudaMemcpyHostToDevice);
-	cudaErrorCheck(__FILE__, __LINE__);
-	cudaMemcpyAsync(MGPU[i], M, N*sizeof(float), cudaMemcpyHostToDevice);
-	cudaErrorCheck(__FILE__, __LINE__);
-}
-	
-		
-	printf("\n Setup finished.\n");
-}
+        cudaSetDevice(i);
 
-__global__ void getForces(float3 *p, float3 *v, float3 *f, float *m, float g, float h, int halfN, int n, int device)
-{
-	float dx, dy, dz,d,d2;
-	float force_mag;
-	int offset;
-		
-	if(device == 0)
-	{
-		offset = 0;
-	}
-	else
-	{
-		offset = halfN;
-	}
-	
-	int i = threadIdx.x + blockDim.x*blockIdx.x + offset;
-	
-	if(i < n)
-	{
-		f[i].x = 0.0f;
-		f[i].y = 0.0f;
-		f[i].z = 0.0f;
-		
-		for(int j = 0; j < n; j++)
-		{
-			if(i != j)
-			{
-				dx = p[j].x-p[i].x;
-				dy = p[j].y-p[i].y;
-				dz = p[j].z-p[i].z;
-				d2 = dx*dx + dy*dy + dz*dz;
-				d  = sqrt(d2);
-				
-				force_mag  = (g*m[i]*m[j])/(d2) - (h*m[i]*m[j])/(d2*d2);
-				f[i].x += force_mag*dx/d;
-				f[i].y += force_mag*dy/d;
-				f[i].z += force_mag*dz/d;
-			}
-		}
-	}
+        cudaMalloc(&PGPUs[i], N * sizeof(float3)); // Global P
+        cudaMalloc(&MGPUs[i], N * sizeof(float));  // Global M
+
+        cudaMalloc(&VGPUs[i], workload * sizeof(float3)); // Local V
+        cudaMalloc(&FGPUs[i], workload * sizeof(float3)); // Local F
+        cudaErrorCheck(__FILE__, __LINE__);
+
+        cudaMemcpyAsync(PGPUs[i], P, N * sizeof(float3), cudaMemcpyHostToDevice);
+        cudaMemcpyAsync(MGPUs[i], M, N * sizeof(float), cudaMemcpyHostToDevice);
+
+        cudaMemcpyAsync(VGPUs[i], &V[offset], workload * sizeof(float3), cudaMemcpyHostToDevice);
+        cudaMemcpyAsync(FGPUs[i], &F[offset], workload * sizeof(float3), cudaMemcpyHostToDevice);
+        cudaErrorCheck(__FILE__, __LINE__);
+    }
+
+    printf("\n Setup finished.\n");
 }
 
-__global__ void moveBodies(float3 *p, float3 *v, float3 *f, float *m, float damp, float dt, float t, int halfN, int n, int device)
+__global__ void getForces(float3 *p, float3 *f, float *m, float3 *localF, float g, float h, int offset, int workload, int n)
 {
-	int offset;
-		
-	if(device == 0)
-	{
-		offset = 0;
-	}
-	else
-	{
-		offset = halfN;
-	}
-	
-	int i = threadIdx.x + blockDim.x*blockIdx.x + offset;
-	
-	if(i < n)
-	{
-		if(t == 0.0f)
-		{
-			v[i].x += ((f[i].x-damp*v[i].x)/m[i])*dt/2.0f;
-			v[i].y += ((f[i].y-damp*v[i].y)/m[i])*dt/2.0f;
-			v[i].z += ((f[i].z-damp*v[i].z)/m[i])*dt/2.0f;
-		}
-		else
-		{
-			v[i].x += ((f[i].x-damp*v[i].x)/m[i])*dt;
-			v[i].y += ((f[i].y-damp*v[i].y)/m[i])*dt;
-			v[i].z += ((f[i].z-damp*v[i].z)/m[i])*dt;
-		}
+    int i = threadIdx.x + blockDim.x * blockIdx.x + offset;
 
-		p[i].x += v[i].x*dt;
-		p[i].y += v[i].y*dt;
-		p[i].z += v[i].z*dt;
-	}
+    if (i < offset + workload) {
+        localF[i - offset].x = 0.0f;
+        localF[i - offset].y = 0.0f;
+        localF[i - offset].z = 0.0f;
+
+        for (int j = 0; j < n; j++) {
+            if (i != j) {
+                float dx = p[j].x - p[i].x;
+                float dy = p[j].y - p[i].y;
+                float dz = p[j].z - p[i].z;
+                float d2 = dx * dx + dy * dy + dz * dz;
+
+         
+                    float d = sqrt(d2);
+                    float force_mag = (g * m[i] * m[j]) / d2 - (h * m[i] * m[j]) / (d2 * d2);
+                    localF[i - offset].x += force_mag * dx / d;
+                    localF[i - offset].y += force_mag * dy / d;
+                    localF[i - offset].z += force_mag * dz / d;
+            
+            }
+        }
+    }
+}
+
+__global__ void moveBodies(float3 *p, float3 *v, float3 *f, float *m, float damp, float dt, float t, int offset, int workload)
+{
+    int i = threadIdx.x + blockDim.x * blockIdx.x + offset;
+
+    if (i < offset + workload) {
+        if (t == 0.0f) {
+            v[i - offset].x += ((f[i - offset].x - damp * v[i - offset].x) / m[i]) * dt / 2.0f;
+            v[i - offset].y += ((f[i - offset].y - damp * v[i - offset].y) / m[i]) * dt / 2.0f;
+            v[i - offset].z += ((f[i - offset].z - damp * v[i - offset].z) / m[i]) * dt / 2.0f;
+        } else {
+            v[i - offset].x += ((f[i - offset].x - damp * v[i - offset].x) / m[i]) * dt;
+            v[i - offset].y += ((f[i - offset].y - damp * v[i - offset].y) / m[i]) * dt;
+            v[i - offset].z += ((f[i - offset].z - damp * v[i - offset].z) / m[i]) * dt;
+        }
+
+        p[i].x += v[i - offset].x * dt;
+        p[i].y += v[i - offset].y * dt;
+        p[i].z += v[i - offset].z * dt;
+    }
 }
 
 void nBody()
 {
-	int    drawCount = 0; 
-	float  t = 0.0;
-	float dt = 0.0001;
+    int drawCount = 0;
+    float t = 0.0;
+    float dt = 0.0001;
 
-	while(t < RUN_TIME)
-	{
-		// I will be doing some redundant setdevices for symmetry so it is easier to see what is going on.
-		
-		// Updating 1st half of bodies on devive 0
-		cudaSetDevice(0);
-		getForces<<<GridSize,BlockSize>>>(PGPU0, VGPU0, FGPU0, MGPU0, G, H, HalfN, N, 0);
-		cudaErrorCheck(__FILE__, __LINE__);
-		moveBodies<<<GridSize,BlockSize>>>(PGPU0, VGPU0, FGPU0, MGPU0, Damp, dt, t, HalfN, N, 0);
-		cudaErrorCheck(__FILE__, __LINE__);
-		
-		// Updating 2nd half of bodies on devive 1
-		cudaSetDevice(1);
-		getForces<<<GridSize,BlockSize>>>(PGPU1, VGPU1, FGPU1, MGPU1, G, H, HalfN, N, 1);
-		cudaErrorCheck(__FILE__, __LINE__);
-		moveBodies<<<GridSize,BlockSize>>>(PGPU1, VGPU1, FGPU1, MGPU1, Damp, dt, t, HalfN, N, 1);
-		cudaErrorCheck(__FILE__, __LINE__);
-		
-		// Syncing CPU with device 0.
-		cudaSetDevice(0);
-		cudaDeviceSynchronize();
-		cudaErrorCheck(__FILE__, __LINE__);
-		
-		// Syncing CPU with device 1
-		cudaSetDevice(1);
-		cudaDeviceSynchronize();
-		cudaErrorCheck(__FILE__, __LINE__);
-		
-		// Copying memory between GPUs. It my seem like you need to also copy velocities as well but velocities are only updated with 
-		// information from it's own thread.
-		// Copying 1st half of body positions updated on device 0 to devive 1. 
-		cudaSetDevice(0);	
-		cudaMemcpyAsync(PGPU1, PGPU0, HalfN*sizeof(float3), cudaMemcpyDeviceToDevice);
-		cudaErrorCheck(__FILE__, __LINE__);
-		
-		// Copying 2nd half of body positions updated on device 1 to devive 0.
-		cudaSetDevice(1);	
-		cudaMemcpyAsync(&PGPU0[HalfN], &PGPU1[HalfN], HalfN*sizeof(float3), cudaMemcpyDeviceToDevice);
-		cudaErrorCheck(__FILE__, __LINE__);
-		
-		// Syncing CPU with device 0.
-		cudaSetDevice(0);
-		cudaDeviceSynchronize();
-		cudaErrorCheck(__FILE__, __LINE__);
-		
-		// Syncing CPU with device 1
-		cudaSetDevice(1);
-		cudaDeviceSynchronize();
-		cudaErrorCheck(__FILE__, __LINE__);
-		
+    while (t < RUN_TIME) {
+        for (int gpu = 0; gpu < NumberOfGpus; gpu++) {
+            int offset = (gpu * N) / NumberOfGpus;
+            int workload = ((gpu + 1) * N) / NumberOfGpus - offset;
 
-		if(drawCount == DRAW_RATE) 
-		{	
-			drawPicture();
-			drawCount = 0;
-		}
-		
-		t += dt;
-		drawCount++;
-	}
+            cudaSetDevice(gpu);
+            getForces<<<GridSize, BlockSize>>>(PGPUs[gpu], FGPUs[gpu], MGPUs[gpu], FGPUs[gpu], G, H, offset, workload, N);
+            cudaErrorCheck(__FILE__, __LINE__);
+            moveBodies<<<GridSize, BlockSize>>>(PGPUs[gpu], VGPUs[gpu], FGPUs[gpu], MGPUs[gpu], Damp, dt, t, offset, workload);
+            cudaErrorCheck(__FILE__, __LINE__);
+        }
+
+        // Device-to-Device Copy: Share updated positions across GPUs
+        for (int gpu = 0; gpu < NumberOfGpus; gpu++) {
+            int nextGpu = (gpu + 1) % NumberOfGpus;
+            cudaMemcpyPeer(PGPUs[nextGpu], nextGpu, PGPUs[gpu], gpu, N * sizeof(float3));
+            cudaErrorCheck(__FILE__, __LINE__);
+        }
+
+        for (int gpu = 0; gpu < NumberOfGpus; gpu++) {
+            cudaSetDevice(gpu);
+            cudaDeviceSynchronize();
+        }
+
+        if (drawCount == DRAW_RATE) {
+            drawPicture();
+            drawCount = 0;
+        }
+
+        t += dt;
+        drawCount++;
+    }
 }
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
-	setup();
-	
-	int XWindowSize = 1000;
-	int YWindowSize = 1000;
-	
-	glutInit(&argc,argv);
-	glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH | GLUT_RGB);
-	glutInitWindowSize(XWindowSize,YWindowSize);
-	glutInitWindowPosition(0,0);
-	glutCreateWindow("Nbody Two GPUs");
-	GLfloat light_position[] = {1.0, 1.0, 1.0, 0.0};
-	GLfloat light_ambient[]  = {0.0, 0.0, 0.0, 1.0};
-	GLfloat light_diffuse[]  = {1.0, 1.0, 1.0, 1.0};
-	GLfloat light_specular[] = {1.0, 1.0, 1.0, 1.0};
-	GLfloat lmodel_ambient[] = {0.2, 0.2, 0.2, 1.0};
-	GLfloat mat_specular[]   = {1.0, 1.0, 1.0, 1.0};
-	GLfloat mat_shininess[]  = {10.0};
-	glClearColor(0.0, 0.0, 0.0, 0.0);
-	glShadeModel(GL_SMOOTH);
-	glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
-	glLightfv(GL_LIGHT0, GL_POSITION, light_position);
-	glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
-	glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
-	glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
-	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, lmodel_ambient);
-	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
-	glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
-	glEnable(GL_LIGHTING);
-	glEnable(GL_LIGHT0);
-	glEnable(GL_COLOR_MATERIAL);
-	glEnable(GL_DEPTH_TEST);
-	glutDisplayFunc(drawPicture);
-	glutIdleFunc(nBody);
-	
-	float3 eye = {0.0f, 0.0f, 2.0f*GlobeRadius};
-	float near = 0.2;
-	float far = 5.0*GlobeRadius;
-	
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	glFrustum(-0.2, 0.2, -0.2, 0.2, near, far);
-	glMatrixMode(GL_MODELVIEW);
-	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-	gluLookAt(eye.x, eye.y, eye.z, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
-	
-	glutMainLoop();
-	return 0;
+    setup();
+
+    int XWindowSize = 1000;
+    int YWindowSize = 1000;
+
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH | GLUT_RGB);
+    glutInitWindowSize(XWindowSize, YWindowSize);
+    glutInitWindowPosition(0, 0);
+    glutCreateWindow("Nbody Multi-GPU");
+    GLfloat light_position[] = {1.0, 1.0, 1.0, 0.0};
+    GLfloat light_ambient[] = {0.0, 0.0, 0.0, 1.0};
+    GLfloat light_diffuse[] = {1.0, 1.0, 1.0, 1.0};
+    GLfloat light_specular[] = {1.0, 1.0, 1.0, 1.0};
+    GLfloat lmodel_ambient[] = {0.2, 0.2, 0.2, 1.0};
+    GLfloat mat_specular[] = {1.0, 1.0, 1.0, 1.0};
+    GLfloat mat_shininess[] = {10.0};
+    glClearColor(0.0, 0.0, 0.0, 0.0);
+    glShadeModel(GL_SMOOTH);
+    glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
+    glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+    glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
+    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, lmodel_ambient);
+    glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
+    glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+    glEnable(GL_COLOR_MATERIAL);
+    glEnable(GL_DEPTH_TEST);
+    glutDisplayFunc(drawPicture);
+    glutIdleFunc(nBody);
+
+    float3 eye = {0.0f, 0.0f, 2.0f * GlobeRadius};
+    float near = 0.2;
+    float far = 5.0 * GlobeRadius;
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glFrustum(-0.2, 0.2, -0.2, 0.2, near, far);
+    glMatrixMode(GL_MODELVIEW);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    gluLookAt(eye.x, eye.y, eye.z, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+
+    glutMainLoop();
+    return 0;
 }
