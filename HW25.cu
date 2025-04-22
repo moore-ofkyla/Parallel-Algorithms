@@ -276,12 +276,16 @@ void nBody()
             cudaErrorCheck(__FILE__, __LINE__);
         }
 
-        // Device-to-Device Copy: Share updated positions across GPUs
         for (int gpu = 0; gpu < NumberOfGpus; gpu++) {
-            int nextGpu = (gpu + 1) % NumberOfGpus;
-            cudaMemcpyPeer(PGPUs[nextGpu], nextGpu, PGPUs[gpu], gpu, N * sizeof(float3));
-            cudaErrorCheck(__FILE__, __LINE__);
-        }
+    int offset = (gpu * N) / NumberOfGpus;
+    int workload = ((gpu + 1) * N) / NumberOfGpus - offset;
+
+    int nextGpu = (gpu + 1) % NumberOfGpus;
+
+    // Copy only the positions of particles handled by the current GPU to the next GPU
+    cudaMemcpyPeer(&PGPUs[nextGpu][offset], nextGpu, &PGPUs[gpu][offset], gpu, workload * sizeof(float3));
+    cudaErrorCheck(__FILE__, __LINE__);
+}
 
         for (int gpu = 0; gpu < NumberOfGpus; gpu++) {
             cudaSetDevice(gpu);
