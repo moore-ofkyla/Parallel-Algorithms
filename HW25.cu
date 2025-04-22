@@ -75,7 +75,6 @@ void drawPicture()
 		//offset represents the starting index of the GPU's workload.
         int workload = ((i + 1) * N) / NumberOfGpus - offset;
 
-
         cudaSetDevice(i);
         cudaMemcpyAsync(&P[offset], &PGPUs[i][offset], workload * sizeof(float3), cudaMemcpyDeviceToHost);
         //P[offset] is the host array where we want to copy the data to.
@@ -117,24 +116,47 @@ void setup()
     BlockSize.y = 1;
     BlockSize.z = 1;
 
-    int bodiesPerGpu = (N + NumberOfGpus - 1) / NumberOfGpus;
+    int maxBodiesPerGpu = N/NumberOfGpus+N%NumberOfGpus;
 	//This rounds up the number of bodies per GPU to the next whole number.
-    GridSize.x = (bodiesPerGpu - 1) / BlockSize.x + 1;
+	//I just set all grids to the same size so that they are all the same size.
+	//example: If N=101 and NumberOfGpus=2, then bodiesPerGpu=51 for both GPUs.
+    GridSize.x = (maxBodiesPerGpu - 1) / BlockSize.x + 1;
     GridSize.y = 1;
     GridSize.z = 1;
 
     Damp = 0.5;
-
+	//cpu variables
     M = (float *)malloc(N * sizeof(float));
     P = (float3 *)malloc(N * sizeof(float3));
     V = (float3 *)malloc(N * sizeof(float3));
     F = (float3 *)malloc(N * sizeof(float3));
-	// P, V, and F are all arrays of float3, which is a struct that contains three floats (x, y, z).
-	// M is an array of floats.
+	//allocating space on the CPU for the array of pointers to the GPU arrays.
     PGPUs = (float3 **)malloc(NumberOfGpus * sizeof(float3 *));
     VGPUs = (float3 **)malloc(NumberOfGpus * sizeof(float3 *));
     FGPUs = (float3 **)malloc(NumberOfGpus * sizeof(float3 *));
     MGPUs = (float **)malloc(NumberOfGpus * sizeof(float *));
+
+	for (int i = 0; i < NumberOfGpus; i++)
+	 {
+        int offset = (i * N) / NumberOfGpus;
+		//offset represents the starting index of the GPU's workload.
+        int workload = ((i + 1) * N) / NumberOfGpus - offset;
+		//workload represents the number of bodies that the GPU will handle.
+		//example: If N=101 and NumberOfGpus=2, then workload=51 for the first GPU and 50 for the second GPU.
+
+        cudaSetDevice(i);
+		cudaErrorCheck(__FILE__, __LINE__);
+		
+        cudaMalloc(&PGPUs[i], N * sizeof(float3)); 
+		cudaErrorCheck(__FILE__, __LINE__);
+        cudaMalloc(&MGPUs[i], N * sizeof(float));  
+		cudaErrorCheck(__FILE__, __LINE__);
+
+        cudaMalloc(&VGPUs[i], workload * sizeof(float3)); // Local V
+		cudaErrorCheck(__FILE__, __LINE__);
+        cudaMalloc(&FGPUs[i], workload * sizeof(float3)); // Local F
+        cudaErrorCheck(__FILE__, __LINE__);
+	}
 
     Diameter = pow(H / G, 1.0 / (LJQ - LJP));
     Radius = Diameter / 2.0;
@@ -194,19 +216,13 @@ void setup()
 		//workload represents the number of bodies that the GPU will handle.
 		//example: If N=101 and NumberOfGpus=2, then workload=51 for the first GPU and 50 for the second GPU.
 
-        cudaSetDevice(i);
-		
-        cudaMalloc(&PGPUs[i], N * sizeof(float3)); 
-        cudaMalloc(&MGPUs[i], N * sizeof(float));  
-
-        cudaMalloc(&VGPUs[i], workload * sizeof(float3)); // Local V
-        cudaMalloc(&FGPUs[i], workload * sizeof(float3)); // Local F
-        cudaErrorCheck(__FILE__, __LINE__);
-		//send all P and M data to the GPU.
         cudaMemcpyAsync(PGPUs[i], P, N * sizeof(float3), cudaMemcpyHostToDevice);
+		cudaErrorCheck(__FILE__, __LINE__);
         cudaMemcpyAsync(MGPUs[i], M, N * sizeof(float), cudaMemcpyHostToDevice);
+		cudaErrorCheck(__FILE__, __LINE__);
 		//send only the local V and F data to the GPU.
         cudaMemcpyAsync(VGPUs[i], &V[offset], workload * sizeof(float3), cudaMemcpyHostToDevice);
+		cudaErrorCheck(__FILE__, __LINE__);
 		//VGPU[i] is the destination
 		//&V[offset] is the source pointer on the host
 		//workload * sizeof(float3) is the size of the data to be copied
@@ -221,11 +237,14 @@ __global__ void getForces(float3 *p, float3 *f, float *m, float3 *localF, float 
 {
     int i = threadIdx.x + blockDim.x * blockIdx.x + offset;
 
-    if (i < offset + workload) {
+    if (i < offset + workload)
+	//offset + workload is the end of the range of bodies that this GPU will handle.
+	{
+		//i-offset because localF only stores the local forces for the bodies that this GPU will handle.
         localF[i - offset].x = 0.0f;
         localF[i - offset].y = 0.0f;
         localF[i - offset].z = 0.0f;
-
+		//calculating the forces on the body i from all the other bodies.
         for (int j = 0; j < n; j++) {
             if (i != j) {
                 float dx = p[j].x - p[i].x;
@@ -289,13 +308,13 @@ void nBody()
             cudaDeviceSynchronize();
         }
 
-		for (int gpu = 0; gpu < NumberOfGpus; gpu++) {
-			int offset = (gpu * N) / NumberOfGpus;
-			int workload = ((gpu + 1) * N) / NumberOfGpus - offset;
+		for (int i = 0; i < NumberOfGpus; i++) {
+			int offset = (i * N) / NumberOfGpus;
+			int workload = ((i + 1) * N) / NumberOfGpus - offset;
 		
 			for (int neighbor = 0; neighbor < NumberOfGpus; neighbor++) {
-				if (neighbor != gpu) { // Avoid copying to itself
-					cudaMemcpyPeer(&PGPUs[neighbor][offset], neighbor, &PGPUs[gpu][offset], gpu, workload * sizeof(float3));
+				if (neighbor != i) { // Avoid copying to itself
+					cudaMemcpyPeer(&PGPUs[neighbor][offset], neighbor, &PGPUs[i][offset], i, workload * sizeof(float3));
 					cudaErrorCheck(__FILE__, __LINE__);
 				}
 			}
