@@ -1,4 +1,4 @@
-// Name:
+// Name:Kyla Moore
 // CPU random walk. 
 // nvcc HW27.cu -o temp
 
@@ -10,23 +10,34 @@
 */
 
 // Include files
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 // Defines
-
-
+# define NUMBER_OF_STEPS 10000
 // Globals
 
 
 // Function prototypes
+int generateStep();
 
-
-int main(int, char**);
-
-
-int main(int argc, char** argv)
+int generateStep ();
 {
-	
+        return (rand() % 2 == 0) ? -1 : 1;
+}
+
+
+int main()
+{
+	srand(time(NULL));
+	int position=0;
+	for(int i=0;i<NUMBER_OF_STEPS;i++)
+	{
+		position+= generateStep();
+		
+	}
+	printf("Your final position is... %d",position);
 	return 0;
 }
 
