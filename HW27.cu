@@ -22,7 +22,7 @@
 // Function prototypes
 int generateStep();
 
-int generateStep ();
+int generateStep ()
 {
         return (rand() % 2 == 0) ? -1 : 1;
 }
