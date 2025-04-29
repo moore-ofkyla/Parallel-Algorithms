@@ -37,7 +37,7 @@ int main()
 		position+= generateStep();
 		
 	}
-	printf("Your final position is... %d",position);
+	printf("Your final position is... %d\n",position);
 	return 0;
 }
 
