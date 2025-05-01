@@ -18,7 +18,7 @@
 
 // Globals
 int NumberOfRandomSteps = 10000;
-int NumberOfThreadsPerBlock = 10;
+int NumberOfThreadsPerBlock = 10;//essentially number of walks
 int *Positions_CPU;
 int *Positions_GPU;
 float MidPoint = (float)RAND_MAX/2.0f;
