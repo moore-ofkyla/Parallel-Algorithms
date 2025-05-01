@@ -75,10 +75,16 @@ void allocateMemory()
 __global__ void randomWalk(int *positions, int NumberOfRandomSteps,int seed)
 
 {		
-
 	int id=blockIdx.x * blockDim.x + threadIdx.x;
 	int position = 0;
-	    // Setup RNG state
+	    /* Setup RNG state
+		currandState is a per thread object that stores the state of the random number generator.
+		currand_init initializes the state of the random number generator.
+		seed +id makes sure that each thread has a different seed.
+		id parameter is used to differentiate between threads.
+		0 is the offset, which is not used in this case.
+		&state is a pointer to the state of the random number generator.
+		*/
 		curandState state;
 		curand_init(seed+ id, id, 0, &state);
 		for(int i = 0; i < NumberOfRandomSteps; i++)
@@ -86,7 +92,7 @@ __global__ void randomWalk(int *positions, int NumberOfRandomSteps,int seed)
 			//originally used float randomNumber= curand_uniform(&state);
 			//but this is a float and I need an int, since I am using mod2
 			//&1 is a bitwise operator that will give me 0 or 1.
-			int randomNumber=  curand(&state) & 1;
+			int randomNumber=  curand(&state) & 1;//generates a random number using the curandState object.
 			position += (-2*(randomNumber%2) + 1); // -1 or 1
 		}
 		positions[id] = position; // Store the final position in the array
