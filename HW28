@@ -91,8 +91,12 @@ __global__ void randomWalk(int *positions, int NumberOfRandomSteps,int seed)
 		{
 			//originally used float randomNumber= curand_uniform(&state);
 			//but this is a float and I need an int, since I am using mod2
-			//&1 is a bitwise operator that will give me 0 or 1.
+		
 			int randomNumber=  curand(&state) & 1;//generates a random number using the curandState object.
+			//In short, & 1 is a quick way to check if a number is odd or even:
+			//Odd: the last bit is 1 (so number & 1 gives 1).
+			//Even: the last bit is 0 (so number & 1 gives 0).
+
 			position += (-2*(randomNumber%2) + 1); // -1 or 1
 		}
 		positions[id] = position; // Store the final position in the array
